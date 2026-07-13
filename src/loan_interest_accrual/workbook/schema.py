@@ -1,0 +1,92 @@
+from dataclasses import dataclass
+from enum import StrEnum
+
+from loan_interest_accrual.domain import Loan, Movement, NaturalMonth
+
+
+LOAN_SHEET = "贷款主表"
+MOVEMENT_SHEET = "资金变动"
+
+LOAN_REQUIRED_HEADERS = (
+    "贷款ID",
+    "公司名称",
+    "贷款合同号",
+    "贷款银行",
+    "期初本金（元）",
+    "年利率",
+    "计息基准",
+    "计息开始日期",
+    "计息结束日期",
+    "是否资本化",
+)
+MOVEMENT_REQUIRED_HEADERS = (
+    "贷款ID",
+    "变动日期",
+    "变动类型",
+    "变动金额（元）",
+)
+OPTIONAL_HEADERS = ("备注",)
+LOAN_TEMPLATE_HEADERS = LOAN_REQUIRED_HEADERS + OPTIONAL_HEADERS
+MOVEMENT_TEMPLATE_HEADERS = MOVEMENT_REQUIRED_HEADERS + OPTIONAL_HEADERS
+
+CURRENCY_NUMBER_FORMAT = '#,##0.00'
+PERCENT_NUMBER_FORMAT = "0.00%"
+DATE_NUMBER_FORMAT = "yyyy-mm-dd"
+
+
+class WorkbookErrorCode(StrEnum):
+    FILE_EXTENSION_INVALID = "FILE_EXTENSION_INVALID"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    WORKBOOK_OPEN_FAILED = "WORKBOOK_OPEN_FAILED"
+    MACRO_NOT_ALLOWED = "MACRO_NOT_ALLOWED"
+    EXTERNAL_LINK_NOT_ALLOWED = "EXTERNAL_LINK_NOT_ALLOWED"
+    EMBEDDED_OBJECT_NOT_ALLOWED = "EMBEDDED_OBJECT_NOT_ALLOWED"
+    FORMULA_NOT_ALLOWED = "FORMULA_NOT_ALLOWED"
+    SHEET_MISSING = "SHEET_MISSING"
+    SHEET_DUPLICATE = "SHEET_DUPLICATE"
+    COLUMN_MISSING = "COLUMN_MISSING"
+    COLUMN_DUPLICATE = "COLUMN_DUPLICATE"
+    LOAN_ID_REQUIRED = "LOAN_ID_REQUIRED"
+    LOAN_ID_DUPLICATE = "LOAN_ID_DUPLICATE"
+    REQUIRED_VALUE_MISSING = "REQUIRED_VALUE_MISSING"
+    VALUE_TYPE_INVALID = "VALUE_TYPE_INVALID"
+    INTEREST_RATE_INVALID = "INTEREST_RATE_INVALID"
+    DAY_COUNT_BASIS_INVALID = "DAY_COUNT_BASIS_INVALID"
+    DATE_INVALID = "DATE_INVALID"
+    DATE_RANGE_INVALID = "DATE_RANGE_INVALID"
+    LOAN_PERIOD_OUTSIDE_MONTH = "LOAN_PERIOD_OUTSIDE_MONTH"
+    HISTORICAL_PERIOD_NOT_FOUND = "HISTORICAL_PERIOD_NOT_FOUND"
+    CAPITALIZATION_FLAG_INVALID = "CAPITALIZATION_FLAG_INVALID"
+    MOVEMENT_LOAN_ID_REQUIRED = "MOVEMENT_LOAN_ID_REQUIRED"
+    MOVEMENT_LOAN_ID_NOT_FOUND = "MOVEMENT_LOAN_ID_NOT_FOUND"
+    MOVEMENT_LOAN_ID_AMBIGUOUS = "MOVEMENT_LOAN_ID_AMBIGUOUS"
+    MOVEMENT_TYPE_INVALID = "MOVEMENT_TYPE_INVALID"
+    MOVEMENT_AMOUNT_INVALID = "MOVEMENT_AMOUNT_INVALID"
+    MOVEMENT_DATE_OUTSIDE_MONTH = "MOVEMENT_DATE_OUTSIDE_MONTH"
+    NEGATIVE_PRINCIPAL = "NEGATIVE_PRINCIPAL"
+    LOAN_ROW_LIMIT_EXCEEDED = "LOAN_ROW_LIMIT_EXCEEDED"
+    MOVEMENT_ROW_LIMIT_EXCEEDED = "MOVEMENT_ROW_LIMIT_EXCEEDED"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkbookError:
+    error_code: WorkbookErrorCode
+    sheet: str | None
+    row: int | None
+    column_or_field: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class CalculableWorkbookInput:
+    period: NaturalMonth
+    loans: tuple[Loan, ...]
+    movements: tuple[Movement, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkbookImportResult:
+    source_bytes: bytes
+    source_sha256: str
+    calculable_input: CalculableWorkbookInput | None
+    errors: tuple[WorkbookError, ...]

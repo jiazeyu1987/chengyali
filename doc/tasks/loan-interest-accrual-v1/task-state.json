@@ -1,0 +1,98 @@
+{
+  "task_id": "loan-interest-accrual-v1",
+  "goal": "Build and release a local Windows web application for monthly loan interest accrual from standardized Excel input.",
+  "status": "completed",
+  "current_stage": "completed",
+  "planner_review_status": "approved",
+  "plan_review_status": "approved",
+  "blocking_prereqs": [],
+  "iteration_counts": {
+    "planner_revisions": 1,
+    "plan_revisions": 0,
+    "executor_loops": 1,
+    "test_loops": 1
+  },
+  "tasks": [
+    {
+      "task_id": "LIA-T01",
+      "title": "Project bootstrap and executable test baseline",
+      "status": "completed",
+      "dependency_ids": [],
+      "write_scope": ["pyproject.toml", "requirements.txt", ".gitignore", "src/loan_interest_accrual/__init__.py", "src/loan_interest_accrual/version.py", "src/loan_interest_accrual/settings.py", "tests/conftest.py", "tests/bootstrap/**"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-31"],
+      "owner_agent": "",
+      "last_outcome": "Independent verification PASS; 7 bootstrap tests passed."
+    },
+    {
+      "task_id": "LIA-T02",
+      "title": "Domain models, validation contracts, and calculation engine",
+      "status": "completed",
+      "dependency_ids": ["LIA-T01"],
+      "write_scope": ["src/loan_interest_accrual/domain/**", "tests/unit/domain/**"],
+      "acceptance_ids": ["AC-04", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17", "AC-18"],
+      "owner_agent": "",
+      "last_outcome": "Independent retest PASS; 54 bootstrap/domain tests passed and high-precision failures closed."
+    },
+    {
+      "task_id": "LIA-T03",
+      "title": "Standard Excel template, safe import, and whole-workbook validation",
+      "status": "completed",
+      "dependency_ids": ["LIA-T01", "LIA-T02"],
+      "write_scope": ["src/loan_interest_accrual/workbook/input/**", "tests/unit/workbook_input/**", "tests/integration/workbook_input/**", "tests/fixtures/input/**"],
+      "acceptance_ids": ["AC-03", "AC-05", "AC-06", "AC-07", "AC-08", "AC-19", "AC-20", "AC-29"],
+      "owner_agent": "",
+      "last_outcome": "Independent verification plus supervisor supplemental check PASS; 79 regression tests passed."
+    },
+    {
+      "task_id": "LIA-T04",
+      "title": "Atomic calculation pipeline and fixed-value Excel export",
+      "status": "completed",
+      "dependency_ids": ["LIA-T02", "LIA-T03"],
+      "write_scope": ["src/loan_interest_accrual/application/**", "src/loan_interest_accrual/workbook/export/**", "tests/unit/workbook_export/**", "tests/integration/pipeline/**", "tests/fixtures/export/**"],
+      "acceptance_ids": ["AC-19", "AC-21", "AC-22", "AC-23", "AC-24", "AC-25", "AC-26", "AC-27", "AC-28", "AC-29"],
+      "owner_agent": "",
+      "last_outcome": "Independent verification PASS; 85 regression tests through pipeline passed."
+    },
+    {
+      "task_id": "LIA-T05",
+      "title": "Historical workbook read-only differential validator",
+      "status": "completed",
+      "dependency_ids": ["LIA-T02", "LIA-T03"],
+      "write_scope": ["tools/historical_validation/**", "tests/historical/**", ".artifacts/loan-interest-accrual-v1/historical/**"],
+      "acceptance_ids": ["AC-30"],
+      "owner_agent": "",
+      "last_outcome": "Independent verification PASS; 82 historical regression tests passed and source hash unchanged."
+    },
+    {
+      "task_id": "LIA-T06",
+      "title": "FastAPI APIs and Jinja2 browser interface",
+      "status": "completed",
+      "dependency_ids": ["LIA-T04"],
+      "write_scope": ["src/loan_interest_accrual/web/**", "tests/integration/web/**", "tests/fixtures/web/**"],
+      "acceptance_ids": ["AC-01", "AC-03", "AC-04", "AC-19", "AC-21", "AC-22", "AC-31", "AC-32"],
+      "owner_agent": "",
+      "last_outcome": "Web/API implementation complete; 8 web tests and 96 non-E2E regression tests passed. Independent review found only AC-32 real-browser coverage outstanding, which is owned by dependent task LIA-T08 after Windows startup delivery."
+    },
+    {
+      "task_id": "LIA-T07",
+      "title": "Windows setup/start scripts and runtime integration",
+      "status": "completed",
+      "dependency_ids": ["LIA-T01", "LIA-T06"],
+      "write_scope": ["scripts/**", "tests/integration/windows/**", ".artifacts/loan-interest-accrual-v1/startup/**"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-29", "AC-31", "AC-32"],
+      "owner_agent": "",
+      "last_outcome": "Independent fix-round retest PASS; 11 Windows tests passed, fresh-port two-run smoke was loopback-only with clean process and port release, and 107 non-E2E regression tests passed."
+    },
+    {
+      "task_id": "LIA-T08",
+      "title": "Playwright user journeys and final release verification",
+      "status": "completed",
+      "dependency_ids": ["LIA-T03", "LIA-T04", "LIA-T05", "LIA-T06", "LIA-T07"],
+      "write_scope": ["playwright.config.py", "tests/e2e/**", "tests/release/**", "tests/fixtures/e2e/**", "scripts/verify-release.ps1", ".artifacts/loan-interest-accrual-v1/release/**"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17", "AC-18", "AC-19", "AC-20", "AC-21", "AC-22", "AC-23", "AC-24", "AC-25", "AC-26", "AC-27", "AC-28", "AC-29", "AC-30", "AC-31", "AC-32"],
+      "owner_agent": "",
+      "last_outcome": "Final release verification PASS; bootstrap 7, unit 53, integration 45, historical 3, two-run Windows smoke, E2E 2, release 3, AC-01 through AC-32 pass, and isolated reviewer Round 2 final_decision pass."
+    }
+  ],
+  "updated_at": "2026-07-10T21:59:00+08:00"
+}
