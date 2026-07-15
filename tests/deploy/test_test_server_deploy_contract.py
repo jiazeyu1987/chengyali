@@ -20,6 +20,9 @@ def test_test_server_deploy_script_uses_committed_source_and_test_target() -> No
     assert "--platform manylinux2014_x86_64" in script
     assert "systemctl restart" in script
     assert "ExecStart=`$venv_dir/bin/python -m uvicorn" in script
+    assert "UTF8Encoding" in script
+    assert "remote deployment script upload" in script
+    assert "bash '$remoteDeployScript'" in script
     assert "http://127.0.0.1:`$host_port/health" in script
 
 

@@ -210,10 +210,21 @@ cat > "`$remote_root/current-release.json" <<JSON
 }
 JSON
 
-systemctl --no-pager --full status "`$service_name.service" | sed -n '1,12p'
+systemctl --no-pager --full status "`$service_name.service" | head -n 12
 "@
 
-$remoteScript | & ssh -o BatchMode=yes -o ConnectTimeout=10 $remote "bash -s"
+$remoteScriptName = "$ReleaseTag-remote-deploy.sh"
+$remoteScriptPath = Join-Path $packageRoot $remoteScriptName
+$remoteDeployScript = "/tmp/$remoteScriptName"
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText(
+    $remoteScriptPath,
+    $remoteScript.Replace("`r`n", "`n"),
+    $utf8NoBom
+)
+& scp -q $remoteScriptPath "${remote}:$remoteDeployScript"
+Assert-LastExitCode "remote deployment script upload"
+& ssh -o BatchMode=yes -o ConnectTimeout=10 $remote "bash '$remoteDeployScript'"
 Assert-LastExitCode "remote test deployment"
 
 [pscustomobject]@{
