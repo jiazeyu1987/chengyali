@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>贷款利息自动计提</title>
+  <title>无形资产及长摊自动计提</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -11,8 +11,8 @@
   <header class="app-header">
     <div>
       <p class="eyebrow">本地财务工具</p>
-      <h1>贷款利息自动计提</h1>
-      <p class="subtitle">按自然月校验贷款数据，完成分段计息并导出固定数值结果。</p>
+      <h1>无形资产及长摊自动计提</h1>
+      <p class="subtitle">按自然月计算无形资产和长期待摊费用，自动封顶累计月数与累计摊销金额。</p>
     </div>
     <span class="local-badge">仅在本机运行</span>
   </header>
@@ -35,7 +35,7 @@
       <div class="section-heading">
         <div>
           <p class="step-label">步骤 1</p>
-          <h2 id="input-heading">选择月份与输入文件</h2>
+          <h2 id="input-heading">选择计提月份与输入文件</h2>
         </div>
         <a class="secondary-button" href="/template">下载标准模板</a>
       </div>
@@ -46,9 +46,9 @@
           <input id="calculation-month" name="calculation_month" type="month" required>
         </label>
         <label class="field file-field">
-          <span>贷款数据文件</span>
+          <span>无形资产/长摊数据文件</span>
           <input id="workbook-file" name="file" type="file" accept=".xlsx" required>
-          <small>支持标准模板 .xlsx；也可识别已覆盖规则的历史台账文件</small>
+          <small>请使用标准模板，仅填写黄色区域中的 8 个输入字段。</small>
         </label>
         <div class="actions">
           <button id="calculate-button" class="primary-button" type="submit">计算并预览</button>
@@ -75,77 +75,60 @@
       </div>
       <div class="table-shell">
         <table>
-          <thead>
-            <tr>
-              <th>工作表</th>
-              <th>行号</th>
-              <th>字段</th>
-              <th>错误说明</th>
-              <th>错误代码</th>
-            </tr>
-          </thead>
+          <thead><tr><th>工作表</th><th>行号</th><th>字段</th><th>错误说明</th><th>错误代码</th></tr></thead>
           <tbody id="error-body"></tbody>
         </table>
       </div>
     </section>
 
     <section id="preview-section" class="result-section" aria-labelledby="preview-heading" hidden>
+      <div class="preview-period-row">
+        <span>计提月份</span>
+        <strong id="calculation-period">-</strong>
+      </div>
       <div class="section-heading">
         <div>
           <p class="step-label success-label">步骤 2</p>
-          <h2 id="preview-heading">计提结果预览</h2>
+          <h2 id="preview-heading">摊销结果预览</h2>
         </div>
         <div class="summary-strip">
-          <span><strong id="loan-count">0</strong> 笔贷款</span>
+          <span><strong id="asset-count">0</strong> 项资产</span>
+          <span>原值合计：<strong id="original-total">0.00</strong></span>
           <span>校验状态：<strong id="validation-status">-</strong></span>
         </div>
       </div>
-      <div class="table-shell">
-        <table>
+      <div class="table-shell amortization-table-shell">
+        <table class="amortization-table">
           <thead>
             <tr>
-              <th>贷款ID</th>
-              <th>公司</th>
-              <th>合同号</th>
-              <th>期初本金</th>
-              <th>当月放款</th>
-              <th>当月还本</th>
-              <th>月末本金</th>
-              <th>计息天数</th>
-              <th>计提利息</th>
-              <th>资本化</th>
-              <th>费用化</th>
+              <th>序号</th><th>一级分类</th><th>名称</th><th>对应费用</th>
+              <th>原值</th><th>残值</th><th>开始摊销月</th><th>入账月</th>
+              <th>摊销期限/月</th><th>月摊销额</th><th>累计摊销月数（含本期）</th>
+              <th>累计摊销金额（含本期）</th><th>当期应摊销金额</th>
+              <th>本期实际摊销金额</th><th>差异</th><th>期末净值</th>
             </tr>
           </thead>
           <tbody id="preview-body"></tbody>
+          <tfoot id="preview-total"></tfoot>
         </table>
       </div>
     </section>
   </main>
 
-  <dialog
-    id="usage-dialog"
-    aria-labelledby="usage-dialog-title"
-    aria-describedby="usage-dialog-description"
-  >
+  <dialog id="usage-dialog" aria-labelledby="usage-dialog-title" aria-describedby="usage-dialog-description">
     <div class="dialog-heading">
-      <div>
-        <p class="step-label">使用说明</p>
-        <h2 id="usage-dialog-title">完成一次贷款利息计提</h2>
-      </div>
+      <div><p class="step-label">使用说明</p><h2 id="usage-dialog-title">完成一次无形资产及长摊计提</h2></div>
       <button class="dialog-close" type="button" aria-label="关闭使用说明">×</button>
     </div>
-    <p id="usage-dialog-description">按照以下步骤准备、校验并导出计提结果。</p>
+    <p id="usage-dialog-description">按照以下步骤准备、校验并导出摊销结果。</p>
     <ol class="instruction-list">
-      <li>优先下载标准模板，并按模板字段填写贷款主表和资金变动。</li>
-      <li>也可以上传已覆盖规则的历史台账，月份需与台账中实际数据一致。</li>
-      <li>选择计提月份，上传填写完成的 .xlsx 文件。</li>
-      <li>点击“计算并预览”，根据页面提示修正校验错误。</li>
-      <li>确认预览结果后点击“导出结果”，文件将保存到下载目录。</li>
+      <li>下载标准模板，填写一级分类、名称、对应费用、原值、残值、开始摊销月、入账月和摊销期限/月。</li>
+      <li>选择计提月份并上传填写完成的 .xlsx 文件。</li>
+      <li>程序自动生成序号、月摊销额、累计月数、累计金额及期末净值。</li>
+      <li>已达到摊销期限的资产会封顶累计月数，累计摊销金额等于原值。</li>
+      <li>核对预览后导出结果，文件将保存到下载目录。</li>
     </ol>
-    <div class="dialog-actions">
-      <button class="primary-button dialog-confirm" type="button">知道了</button>
-    </div>
+    <div class="dialog-actions"><button class="primary-button dialog-confirm" type="button">知道了</button></div>
   </dialog>
 
   <footer>上传文件和计算结果仅用于本次操作，页面刷新后不保留。</footer>

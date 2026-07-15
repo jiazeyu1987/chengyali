@@ -25,7 +25,7 @@ HOME_URL = f"http://{LOOPBACK_HOST}:{DEFAULT_PORT}/"
 HEALTH_URL = f"http://{LOOPBACK_HOST}:{DEFAULT_PORT}/health"
 STARTUP_TIMEOUT_SECONDS = 20.0
 SHUTDOWN_DELAY_SECONDS = 0.5
-LOG_DIR = Path.home() / "AppData" / "Local" / "贷款利息自动计提工具"
+LOG_DIR = Path.home() / "AppData" / "Local" / "无形资产长摊自动计提工具"
 STARTUP_LOG = LOG_DIR / "startup.log"
 
 
@@ -72,7 +72,7 @@ def _open_browser_when_ready() -> None:
         except OSError:
             time.sleep(0.25)
     messagebox.showerror(
-        "贷款利息自动计提工具",
+        "无形资产长摊自动计提工具",
         "工具已启动，但未能自动打开页面。请重新双击可执行文件。",
     )
 
@@ -118,7 +118,7 @@ def main() -> int:
     except Exception as error:
         _write_startup_log("startup failed")
         _write_startup_log(traceback.format_exc())
-        messagebox.showerror("贷款利息自动计提工具", str(error))
+        messagebox.showerror("无形资产长摊自动计提工具", str(error))
         return 1
     return 0
 

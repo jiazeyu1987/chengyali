@@ -11,7 +11,7 @@ WEB_ROOT = Path(__file__).resolve().parent
 
 def create_app() -> FastAPI:
     application = FastAPI(
-        title="贷款利息自动计提",
+        title="无形资产及长摊自动计提",
         docs_url=None,
         redoc_url=None,
     )

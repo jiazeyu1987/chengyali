@@ -1,4 +1,12 @@
 from .calculator import calculate_loan, calculate_portfolio
+from .amortization import (
+    AmortizationAsset,
+    AmortizationPortfolio,
+    AmortizationResult,
+    calculate_amortization_portfolio,
+    calculate_asset,
+    elapsed_months_inclusive,
+)
 from .errors import DomainError, DomainErrorCode, DomainValidationError
 from .models import (
     CapitalizationSummary,
@@ -21,6 +29,9 @@ from .reconciliation import (
 
 
 __all__ = [
+    "AmortizationAsset",
+    "AmortizationPortfolio",
+    "AmortizationResult",
     "CapitalizationSummary",
     "CompanySummary",
     "DayCountBasis",
@@ -38,6 +49,9 @@ __all__ = [
     "build_reconciliation_checks",
     "calculate_loan",
     "calculate_portfolio",
+    "calculate_amortization_portfolio",
+    "calculate_asset",
+    "elapsed_months_inclusive",
     "summarize_capitalization",
     "summarize_companies",
 ]

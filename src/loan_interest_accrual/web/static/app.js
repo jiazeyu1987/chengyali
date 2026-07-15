@@ -11,7 +11,10 @@ const errorBody = document.querySelector("#error-body");
 const errorCount = document.querySelector("#error-count");
 const previewSection = document.querySelector("#preview-section");
 const previewBody = document.querySelector("#preview-body");
-const loanCount = document.querySelector("#loan-count");
+const assetCount = document.querySelector("#asset-count");
+const originalTotal = document.querySelector("#original-total");
+const calculationPeriod = document.querySelector("#calculation-period");
+const previewTotal = document.querySelector("#preview-total");
 const validationStatus = document.querySelector("#validation-status");
 const usageButton = document.querySelector("#usage-button");
 const usageDialog = document.querySelector("#usage-dialog");
@@ -145,26 +148,59 @@ function showErrors(errors) {
 function showPreview(payload) {
   errorSection.hidden = true;
   previewBody.replaceChildren();
+  previewTotal.replaceChildren();
 
   for (const item of payload.preview) {
     const row = document.createElement("tr");
     row.append(
-      textCell(item.loan_id),
-      textCell(item.company_name),
-      textCell(item.contract_number),
-      textCell(item.opening_principal),
-      textCell(item.total_drawdowns),
-      textCell(item.total_repayments),
-      textCell(item.ending_principal),
-      textCell(item.interest_days),
-      textCell(item.accrued_interest),
-      textCell(item.capitalized_interest),
-      textCell(item.expensed_interest),
+      textCell(item.sequence),
+      textCell(item.primary_category),
+      textCell(item.name),
+      textCell(item.expense_category),
+      textCell(item.original_value),
+      textCell(item.residual_value),
+      textCell(item.amortization_start),
+      textCell(item.booking_month),
+      textCell(item.amortization_term_months),
+      textCell(item.monthly_amortization),
+      textCell(item.cumulative_months),
+      textCell(item.cumulative_amortization),
+      textCell(item.current_required_amortization),
+      textCell(item.current_actual_amortization),
+      textCell(item.difference),
+      textCell(item.ending_net_value),
     );
+    if (item.fully_amortized) {
+      row.classList.add("fully-amortized-row");
+    }
     previewBody.append(row);
   }
 
-  loanCount.textContent = payload.preview.length;
+  const total = document.createElement("tr");
+  total.className = "total-row";
+  total.append(
+    textCell(""),
+    textCell("合计"),
+    textCell(""),
+    textCell(""),
+    textCell(payload.summary.original_value),
+    textCell(""),
+    textCell("/"),
+    textCell("/"),
+    textCell("/"),
+    textCell(payload.summary.monthly_amortization),
+    textCell("/"),
+    textCell(payload.summary.cumulative_amortization),
+    textCell(payload.summary.current_required_amortization),
+    textCell(payload.summary.current_actual_amortization),
+    textCell(""),
+    textCell(payload.summary.ending_net_value),
+  );
+  previewTotal.append(total);
+
+  assetCount.textContent = payload.summary.asset_count;
+  originalTotal.textContent = payload.summary.original_value;
+  calculationPeriod.textContent = payload.calculation_month;
   validationStatus.textContent = payload.validation_status;
   previewSection.hidden = false;
   exportButton.disabled = false;
@@ -238,7 +274,7 @@ exportButton.addEventListener("click", async () => {
     const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i);
     const filename = encodedName
       ? decodeURIComponent(encodedName[1])
-      : "计提结果.xlsx";
+      : "摊销结果.xlsx";
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = objectUrl;

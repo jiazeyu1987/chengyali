@@ -1,10 +1,12 @@
 param(
     [string]$ExeName = (
         -join ([int[]](
-            36151,
-            27454,
-            21033,
-            24687,
+            26080,
+            24418,
+            36164,
+            20135,
+            38271,
+            25674,
             33258,
             21160,
             35745,
@@ -17,7 +19,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Default EXE display name: 贷款利息自动计提工具
+# Default EXE display name: 无形资产长摊自动计提工具
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $buildRequirements = Join-Path $projectRoot "requirements-build.txt"
@@ -25,7 +27,7 @@ $entrypoint = Join-Path $projectRoot "src\loan_interest_accrual\desktop_exe.py"
 $templatesSource = Join-Path $projectRoot "src\loan_interest_accrual\web\templates"
 $staticSource = Join-Path $projectRoot "src\loan_interest_accrual\web\static"
 $distRoot = Join-Path $projectRoot "dist"
-$artifactRoot = Join-Path $projectRoot ".artifacts\loan-interest-accrual-exe-v1"
+$artifactRoot = Join-Path $projectRoot ".artifacts\amortization-exe-v1"
 $workRoot = Join-Path $artifactRoot "pyinstaller-build"
 $specRoot = Join-Path $artifactRoot "pyinstaller-spec"
 $outputExe = Join-Path $distRoot "$ExeName.exe"
