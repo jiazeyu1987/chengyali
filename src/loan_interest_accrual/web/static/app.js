@@ -1,5 +1,6 @@
 const form = document.querySelector("#calculation-form");
-const monthInput = document.querySelector("#calculation-month");
+const startDateInput = document.querySelector("#calculation-start-date");
+const endDateInput = document.querySelector("#calculation-end-date");
 const fileInput = document.querySelector("#workbook-file");
 const calculateButton = document.querySelector("#calculate-button");
 const exportButton = document.querySelector("#export-button");
@@ -11,6 +12,8 @@ const errorBody = document.querySelector("#error-body");
 const errorCount = document.querySelector("#error-count");
 const previewSection = document.querySelector("#preview-section");
 const previewBody = document.querySelector("#preview-body");
+const calculationPeriod = document.querySelector("#calculation-period");
+const companySummaryBody = document.querySelector("#company-summary-body");
 const loanCount = document.querySelector("#loan-count");
 const validationStatus = document.querySelector("#validation-status");
 const usageButton = document.querySelector("#usage-button");
@@ -108,7 +111,8 @@ async function waitForDesktopShutdown(statusUrl) {
 
 function buildFormData() {
   const data = new FormData();
-  data.append("calculation_month", monthInput.value);
+  data.append("calculation_start_date", startDateInput.value);
+  data.append("calculation_end_date", endDateInput.value);
   if (fileInput.files.length > 0) {
     data.append("file", fileInput.files[0]);
   }
@@ -145,26 +149,50 @@ function showErrors(errors) {
 function showPreview(payload) {
   errorSection.hidden = true;
   previewBody.replaceChildren();
+  companySummaryBody.replaceChildren();
+  calculationPeriod.textContent = (payload.calculation_month ?? "-")
+    .replace("至", " 至 ");
 
   for (const item of payload.preview) {
     const row = document.createElement("tr");
     row.append(
-      textCell(item.loan_id),
+      textCell(item.sequence),
       textCell(item.company_name),
-      textCell(item.contract_number),
+      textCell(item.bank_name),
       textCell(item.opening_principal),
-      textCell(item.total_drawdowns),
-      textCell(item.total_repayments),
-      textCell(item.ending_principal),
-      textCell(item.interest_days),
+      textCell(item.annual_rate),
+      textCell(item.borrowing_time),
       textCell(item.accrued_interest),
-      textCell(item.capitalized_interest),
-      textCell(item.expensed_interest),
+      textCell(item.interest_days),
     );
     previewBody.append(row);
   }
 
-  loanCount.textContent = payload.preview.length;
+  const totalRow = document.createElement("tr");
+  totalRow.className = "total-row";
+  totalRow.append(
+    textCell("合计"),
+    textCell(""),
+    textCell(""),
+    textCell(payload.summary?.opening_principal ?? "0.00"),
+    textCell(""),
+    textCell(""),
+    textCell(payload.summary?.accrued_interest ?? "0.00"),
+    textCell(""),
+  );
+  previewBody.append(totalRow);
+
+  for (const company of payload.company_summaries ?? []) {
+    const row = document.createElement("tr");
+    row.append(
+      textCell(company.company_name),
+      textCell(company.opening_principal),
+      textCell(company.accrued_interest),
+    );
+    companySummaryBody.append(row);
+  }
+
+  loanCount.textContent = payload.summary?.loan_count ?? payload.preview.length;
   validationStatus.textContent = payload.validation_status;
   previewSection.hidden = false;
   exportButton.disabled = false;
@@ -338,8 +366,10 @@ fileInput.addEventListener("change", () => {
   exportButton.disabled = true;
 });
 
-monthInput.addEventListener("change", () => {
-  previewSection.hidden = true;
-  errorSection.hidden = true;
-  exportButton.disabled = true;
-});
+for (const dateInput of [startDateInput, endDateInput]) {
+  dateInput.addEventListener("change", () => {
+    previewSection.hidden = true;
+    errorSection.hidden = true;
+    exportButton.disabled = true;
+  });
+}

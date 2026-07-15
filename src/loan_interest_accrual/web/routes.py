@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
@@ -44,6 +45,7 @@ XLSX_MEDIA_TYPE = (
 )
 TEMPLATE_FILENAME = "贷款利息计提输入模板.xlsx"
 MONTH_PATTERN = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
+DATE_PATTERN = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$")
 WEB_ROOT = Path(__file__).resolve().parent
 LOCAL_ACTION_TOKEN = "loan-interest-accrual"
 
@@ -157,10 +159,21 @@ def exit_desktop_status(
 
 @router.post("/calculate")
 async def calculate(
+    calculation_start_date: Annotated[str | None, Form()] = None,
+    calculation_end_date: Annotated[str | None, Form()] = None,
+    calculation_start_month: Annotated[str | None, Form()] = None,
+    calculation_end_month: Annotated[str | None, Form()] = None,
     calculation_month: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
 ) -> Response:
-    validated = _validate_request(calculation_month, file)
+    validated = _validate_request(
+        calculation_start_date,
+        calculation_end_date,
+        calculation_start_month,
+        calculation_end_month,
+        calculation_month,
+        file,
+    )
     if isinstance(validated, CalculationHttpResponse):
         return _json(validated, 422)
     period, upload = validated
@@ -179,10 +192,21 @@ async def calculate(
 
 @router.post("/export")
 async def export(
+    calculation_start_date: Annotated[str | None, Form()] = None,
+    calculation_end_date: Annotated[str | None, Form()] = None,
+    calculation_start_month: Annotated[str | None, Form()] = None,
+    calculation_end_month: Annotated[str | None, Form()] = None,
     calculation_month: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
 ) -> Response:
-    validated = _validate_request(calculation_month, file)
+    validated = _validate_request(
+        calculation_start_date,
+        calculation_end_date,
+        calculation_start_month,
+        calculation_end_month,
+        calculation_month,
+        file,
+    )
     if isinstance(validated, CalculationHttpResponse):
         return _json(validated, 422)
     period, upload = validated
@@ -208,12 +232,32 @@ async def export(
 
 
 def _validate_request(
+    calculation_start_date: str | None,
+    calculation_end_date: str | None,
+    calculation_start_month: str | None,
+    calculation_end_month: str | None,
     calculation_month: str | None,
     file: UploadFile | None,
 ) -> tuple[NaturalMonth, UploadFile] | CalculationHttpResponse:
     errors: list[HttpError] = []
     period: NaturalMonth | None = None
-    if calculation_month is None or calculation_month == "":
+    using_dates = calculation_start_date is not None or calculation_end_date is not None
+    start_value = (
+        calculation_start_date
+        if using_dates
+        else calculation_start_month or calculation_month
+    )
+    end_value = (
+        calculation_end_date
+        if using_dates
+        else calculation_end_month or calculation_month
+    )
+    response_period = (
+        start_value
+        if start_value == end_value
+        else f"{start_value or ''}至{end_value or ''}"
+    )
+    if not start_value or not end_value:
         errors.append(
             http_error(
                 error_code="PERIOD_REQUIRED",
@@ -222,13 +266,37 @@ def _validate_request(
                 column_or_field="calculation_month",
             )
         )
-    elif not MONTH_PATTERN.fullmatch(calculation_month):
+    elif using_dates and (
+        not DATE_PATTERN.fullmatch(start_value) or not DATE_PATTERN.fullmatch(end_value)
+    ):
+        errors.append(_invalid_period_error())
+    elif not using_dates and (
+        not MONTH_PATTERN.fullmatch(start_value) or not MONTH_PATTERN.fullmatch(end_value)
+    ):
         errors.append(_invalid_period_error())
     else:
-        year, month = calculation_month.split("-", 1)
         try:
-            period = NaturalMonth(int(year), int(month))
-        except DomainValidationError:
+            if using_dates:
+                start_date = date.fromisoformat(start_value)
+                end_date = date.fromisoformat(end_value)
+                period = NaturalMonth(
+                    start_date.year,
+                    start_date.month,
+                    end_date.year,
+                    end_date.month,
+                    start_date.day,
+                    end_date.day,
+                )
+            else:
+                start_year, start_month = start_value.split("-", 1)
+                end_year, end_month = end_value.split("-", 1)
+                period = NaturalMonth(
+                    int(start_year),
+                    int(start_month),
+                    int(end_year),
+                    int(end_month),
+                )
+        except (DomainValidationError, ValueError):
             errors.append(_invalid_period_error())
 
     if file is None or not file.filename:
@@ -244,7 +312,7 @@ def _validate_request(
     if errors:
         return failure_response(
             errors,
-            calculation_month=calculation_month,
+            calculation_month=response_period,
             source_filename=file.filename if file is not None else None,
         )
     if period is None or file is None:
@@ -269,7 +337,11 @@ async def _read_upload(file: UploadFile) -> bytes:
 
 
 def _month_text(period: NaturalMonth) -> str:
-    return f"{period.year:04d}-{period.month:02d}"
+    if period.is_exact_date_range:
+        return f"{period.start_date.isoformat()}至{period.end_date.isoformat()}"
+    start = f"{period.year:04d}-{period.month:02d}"
+    end = f"{period.end_date.year:04d}-{period.end_date.month:02d}"
+    return start if start == end else f"{start}至{end}"
 
 
 def _attachment_disposition(filename: str) -> str:

@@ -28,30 +28,25 @@ def test_standard_template_has_exact_schema_instructions_and_formats() -> None:
     payload = generate_standard_template()
     workbook = load_workbook(BytesIO(payload), data_only=False)
 
-    assert workbook.sheetnames == [LOAN_SHEET, MOVEMENT_SHEET]
+    assert workbook.sheetnames == [LOAN_SHEET]
     loan_sheet = workbook[LOAN_SHEET]
-    movement_sheet = workbook[MOVEMENT_SHEET]
     assert tuple(cell.value for cell in loan_sheet[1]) == LOAN_TEMPLATE_HEADERS
-    assert tuple(cell.value for cell in movement_sheet[1]) == MOVEMENT_TEMPLATE_HEADERS
     assert all(cell.comment and "填写" in cell.comment.text for cell in loan_sheet[1])
-    assert all(cell.comment and "填写" in cell.comment.text for cell in movement_sheet[1])
     assert loan_sheet.freeze_panes == "A2"
-    assert movement_sheet.freeze_panes == "A2"
-    assert loan_sheet["E2"].number_format == CURRENCY_NUMBER_FORMAT
-    assert loan_sheet["F2"].number_format == PERCENT_NUMBER_FORMAT
-    assert loan_sheet["H2"].number_format == DATE_NUMBER_FORMAT
-    assert loan_sheet["I2"].number_format == DATE_NUMBER_FORMAT
-    assert movement_sheet["B2"].number_format == DATE_NUMBER_FORMAT
-    assert movement_sheet["D2"].number_format == CURRENCY_NUMBER_FORMAT
-
-    validations = {
-        validation.formula1
-        for sheet in (loan_sheet, movement_sheet)
-        for validation in sheet.data_validations.dataValidation
+    header_columns = {
+        cell.value: cell.column_letter for cell in loan_sheet[1]
     }
-    assert '"360,365"' in validations
-    assert '"是,否"' in validations
-    assert '"放款,还本"' in validations
+    assert loan_sheet[f"{header_columns['期初本金（元）']}2"].number_format == CURRENCY_NUMBER_FORMAT
+    assert loan_sheet[f"{header_columns['年利率']}2"].number_format == PERCENT_NUMBER_FORMAT
+    assert loan_sheet[f"{header_columns['借款时间']}2"].number_format == DATE_NUMBER_FORMAT
+
+    validations = tuple(loan_sheet.data_validations.dataValidation)
+    assert len(validations) == 3
+    assert all(not validation.allow_blank for validation in validations)
+    assert not any(
+        value in {validation.formula1 for validation in validations}
+        for value in ('"360,365"', '"是,否"', '"放款,还本"')
+    )
 
 
 def test_standard_template_package_contains_no_active_or_external_content() -> None:

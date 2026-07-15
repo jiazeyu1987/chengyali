@@ -12,7 +12,7 @@
     <div>
       <p class="eyebrow">本地财务工具</p>
       <h1>贷款利息自动计提</h1>
-      <p class="subtitle">按自然月校验贷款数据，完成分段计息并导出固定数值结果。</p>
+      <p class="subtitle">按所选日期区间校验贷款数据，自动计算应提利息和计息天数。</p>
     </div>
     <span class="local-badge">仅在本机运行</span>
   </header>
@@ -35,16 +35,24 @@
       <div class="section-heading">
         <div>
           <p class="step-label">步骤 1</p>
-          <h2 id="input-heading">选择月份与输入文件</h2>
+          <h2 id="input-heading">选择日期区间与输入文件</h2>
         </div>
         <a class="secondary-button" href="/template">下载标准模板</a>
       </div>
 
       <form id="calculation-form">
-        <label class="field">
-          <span>计提月份</span>
-          <input id="calculation-month" name="calculation_month" type="month" required>
-        </label>
+        <fieldset class="period-range">
+          <legend>计提日期区间</legend>
+          <label class="field">
+            <span>开始日期</span>
+            <input id="calculation-start-date" name="calculation_start_date" type="date" required>
+          </label>
+          <span class="range-separator" aria-hidden="true">至</span>
+          <label class="field">
+            <span>结束日期</span>
+            <input id="calculation-end-date" name="calculation_end_date" type="date" required>
+          </label>
+        </fieldset>
         <label class="field file-field">
           <span>贷款数据文件</span>
           <input id="workbook-file" name="file" type="file" accept=".xlsx" required>
@@ -90,6 +98,10 @@
     </section>
 
     <section id="preview-section" class="result-section" aria-labelledby="preview-heading" hidden>
+      <div class="preview-period-row">
+        <span>计提区间</span>
+        <strong id="calculation-period">-</strong>
+      </div>
       <div class="section-heading">
         <div>
           <p class="step-label success-label">步骤 2</p>
@@ -100,25 +112,42 @@
           <span>校验状态：<strong id="validation-status">-</strong></span>
         </div>
       </div>
-      <div class="table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th>贷款ID</th>
-              <th>公司</th>
-              <th>合同号</th>
-              <th>期初本金</th>
-              <th>当月放款</th>
-              <th>当月还本</th>
-              <th>月末本金</th>
-              <th>计息天数</th>
-              <th>计提利息</th>
-              <th>资本化</th>
-              <th>费用化</th>
-            </tr>
-          </thead>
-          <tbody id="preview-body"></tbody>
-        </table>
+      <div class="preview-content">
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>公司名称</th>
+                <th>贷款银行</th>
+                <th>期初本金</th>
+                <th>年利率</th>
+                <th>借款时间</th>
+                <th>区间应提利息</th>
+                <th>区间应提利息天数</th>
+              </tr>
+            </thead>
+            <tbody id="preview-body"></tbody>
+          </table>
+        </div>
+        <aside class="company-summary-panel" aria-labelledby="company-summary-heading">
+          <div class="company-summary-heading">
+            <p class="step-label">按公司汇总</p>
+            <h3 id="company-summary-heading">公司本金与利息合计</h3>
+          </div>
+          <div class="company-summary-shell">
+            <table class="company-summary-table">
+              <thead>
+                <tr>
+                  <th>公司名称</th>
+                  <th>本金合计</th>
+                  <th>利息合计</th>
+                </tr>
+              </thead>
+              <tbody id="company-summary-body"></tbody>
+            </table>
+          </div>
+        </aside>
       </div>
     </section>
   </main>
@@ -137,9 +166,13 @@
     </div>
     <p id="usage-dialog-description">按照以下步骤准备、校验并导出计提结果。</p>
     <ol class="instruction-list">
-      <li>优先下载标准模板，并按模板字段填写贷款主表和资金变动。</li>
-      <li>也可以上传已覆盖规则的历史台账，月份需与台账中实际数据一致。</li>
-      <li>选择计提月份，上传填写完成的 .xlsx 文件。</li>
+      <li>优先下载标准模板，并按模板字段填写贷款主表。</li>
+      <li>公司名称、期初本金、年利率、借款时间为必填项。</li>
+      <li>贷款合同号、贷款银行、备注为选填项；贷款银行填写后将在预览和导出结果中显示。</li>
+      <li>区间应提利息按“期初本金 × 年利率 × 区间应提利息天数 ÷ 360”计算。</li>
+      <li>没有还本备注时计算整个所选日期区间；借款时间落在区间内时从次日起算；“26.3.27还本金”按当日全额还清，“26.6.9还700万”按还款日当天原本金、次日起扣减700万元分段计息。</li>
+      <li>也可以上传已覆盖规则的历史台账，日期区间需与台账中的实际数据一致。</li>
+      <li>选择计提开始日期和结束日期，上传填写完成的 .xlsx 文件。</li>
       <li>点击“计算并预览”，根据页面提示修正校验错误。</li>
       <li>确认预览结果后点击“导出结果”，文件将保存到下载目录。</li>
     </ol>

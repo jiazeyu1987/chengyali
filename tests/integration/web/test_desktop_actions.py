@@ -81,7 +81,7 @@ def test_homepage_exposes_local_only_statement_and_accessible_instructions() -> 
     assert 'aria-labelledby="usage-dialog-title"' in response.text
     assert 'id="usage-dialog-title"' in response.text
     assert "下载标准模板" in response.text
-    assert "选择计提月份" in response.text
+    assert "选择计提开始日期和结束日期" in response.text
     assert "上传填写完成的 .xlsx 文件" in response.text
     assert "计算并预览" in response.text
     assert "导出结果" in response.text

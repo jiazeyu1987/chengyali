@@ -24,7 +24,7 @@ def make_precision_loan(
         opening_principal=Decimal(principal),
         annual_rate=Decimal("0.365"),
         day_count_basis=DayCountBasis.DAYS_365,
-        accrual_start=date(2025, 6, 1),
+        accrual_start=date(2025, 5, 31),
         accrual_end=date(2025, 6, 1),
         capitalize_interest=capitalized,
     )

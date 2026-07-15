@@ -6,14 +6,14 @@ from typing import Iterable
 from pydantic import BaseModel
 
 from loan_interest_accrual.application import ApplicationError, CalculationResult
-from loan_interest_accrual.domain.decimal_math import exact_sum
+from loan_interest_accrual.domain.decimal_math import exact_sum, quantize_money
 
 
 PASS_STATUS = "通过"
 FAIL_STATUS = "失败"
 ERROR_MESSAGE_BY_CODE: dict[str, str] = {
-    "PERIOD_REQUIRED": "请选择计算月份",
-    "PERIOD_INVALID": "计算月份必须使用 YYYY-MM 格式",
+    "PERIOD_REQUIRED": "请选择开始日期和结束日期",
+    "PERIOD_INVALID": "日期区间必须使用有效的 YYYY-MM-DD 格式，且结束日期不得早于开始日期",
     "FILE_REQUIRED": "请选择一个 .xlsx 文件",
     "FILE_EXTENSION_INVALID": "文件扩展名必须为 .xlsx",
     "FILE_TOO_LARGE": "上传文件超过允许的大小限制",
@@ -34,7 +34,7 @@ ERROR_MESSAGE_BY_CODE: dict[str, str] = {
     "INTEREST_RATE_INVALID": "年利率必须大于0且小于100%",
     "DAY_COUNT_BASIS_INVALID": "计息基准必须为360或365",
     "DATE_INVALID": "日期格式或日期值无效",
-    "DATE_RANGE_INVALID": "计息结束日期不得早于计息开始日期",
+    "DATE_RANGE_INVALID": "备注中的还本日期不得早于借款时间",
     "LOAN_PERIOD_OUTSIDE_MONTH": "贷款计息期间必须与所选月份有交集",
     "HISTORICAL_PERIOD_NOT_FOUND": "历史工作簿中未找到所选月份的可计算数据",
     "CAPITALIZATION_FLAG_INVALID": "是否资本化必须填写“是”或“否”",
@@ -88,18 +88,14 @@ def http_error(
 
 
 class PreviewRow(BaseModel):
-    loan_id: str
+    sequence: int
     company_name: str
-    contract_number: str
     bank_name: str
     opening_principal: str
-    total_drawdowns: str
-    total_repayments: str
-    ending_principal: str
-    interest_days: int
+    annual_rate: str
+    borrowing_time: str
     accrued_interest: str
-    capitalized_interest: str
-    expensed_interest: str
+    interest_days: int
 
 
 class CheckRow(BaseModel):
@@ -121,6 +117,12 @@ class PreviewSummary(BaseModel):
     expensed_interest: str
 
 
+class CompanyPreviewSummary(BaseModel):
+    company_name: str
+    opening_principal: str
+    accrued_interest: str
+
+
 class CalculationHttpResponse(BaseModel):
     success: bool
     calculation_id: str | None
@@ -131,6 +133,7 @@ class CalculationHttpResponse(BaseModel):
     source_sha256: str
     errors: list[HttpError]
     preview: list[PreviewRow]
+    company_summaries: list[CompanyPreviewSummary]
     checks: list[CheckRow]
     summary: PreviewSummary | None
 
@@ -161,33 +164,63 @@ def failure_response(
         source_sha256=source_sha256,
         errors=list(errors),
         preview=[],
+        company_summaries=[],
         checks=[],
         summary=None,
     )
 
 
 def success_response(calculation: CalculationResult) -> CalculationHttpResponse:
-    month = f"{calculation.period.year:04d}-{calculation.period.month:02d}"
+    if calculation.period.is_exact_date_range:
+        month = (
+            f"{calculation.period.start_date.isoformat()}至"
+            f"{calculation.period.end_date.isoformat()}"
+        )
+    else:
+        start = f"{calculation.period.year:04d}-{calculation.period.month:02d}"
+        end_date = calculation.period.end_date
+        end = f"{end_date.year:04d}-{end_date.month:02d}"
+        month = start if start == end else f"{start}至{end}"
     calculation_number = (
         f"LIA-{month}-{calculation.source_sha256[:12].upper()}"
     )
-    preview = [
-        PreviewRow(
-            loan_id=row.loan_id,
-            company_name=row.company_name,
-            contract_number=row.contract_number,
-            bank_name=row.bank_name,
-            opening_principal=_money(row.opening_principal),
-            total_drawdowns=_money(row.total_drawdowns),
-            total_repayments=_money(row.total_repayments),
-            ending_principal=_money(row.ending_principal),
-            interest_days=row.interest_days,
-            accrued_interest=_money(row.accrued_interest),
-            capitalized_interest=_money(row.capitalized_interest),
-            expensed_interest=_money(row.expensed_interest),
-        )
-        for row in calculation.loan_rows
-    ]
+    preview: list[PreviewRow] = []
+    for result in calculation.portfolio_result.loan_results:
+        if len(result.segments) <= 1:
+            display_rows = (
+                (
+                    result.loan.opening_principal,
+                    result.interest_days,
+                    result.accrued_interest,
+                ),
+            )
+        else:
+            rounded_interest = [
+                quantize_money(segment.unrounded_interest)
+                for segment in result.segments
+            ]
+            rounded_interest[-1] += result.accrued_interest - exact_sum(
+                rounded_interest
+            )
+            display_rows = tuple(
+                (segment.principal, segment.days, interest)
+                for segment, interest in zip(
+                    result.segments, rounded_interest, strict=True
+                )
+            )
+        for principal, days, interest in display_rows:
+            preview.append(
+                PreviewRow(
+                    sequence=len(preview) + 1,
+                    company_name=result.loan.company_name,
+                    bank_name=result.loan.bank_name,
+                    opening_principal=_money(principal),
+                    annual_rate=_rate(result.loan.annual_rate),
+                    borrowing_time=result.loan.accrual_start.isoformat(),
+                    accrued_interest=_money(interest),
+                    interest_days=days,
+                )
+            )
     checks = [
         CheckRow(
             name=check.name,
@@ -197,6 +230,23 @@ def success_response(calculation: CalculationResult) -> CalculationHttpResponse:
             actual=_scalar(check.actual),
         )
         for check in calculation.checks
+    ]
+    summary_by_company = {
+        row.company_name: row for row in calculation.company_summary_rows
+    }
+    company_summaries = [
+        CompanyPreviewSummary(
+            company_name=company_name,
+            opening_principal=_money(
+                summary_by_company[company_name].opening_principal
+            ),
+            accrued_interest=_money(
+                summary_by_company[company_name].accrued_interest
+            ),
+        )
+        for company_name in dict.fromkeys(
+            row.company_name for row in calculation.loan_rows
+        )
     ]
     summary = PreviewSummary(
         loan_count=len(calculation.loan_rows),
@@ -232,6 +282,7 @@ def success_response(calculation: CalculationResult) -> CalculationHttpResponse:
         source_sha256=calculation.source_sha256,
         errors=[],
         preview=preview,
+        company_summaries=company_summaries,
         checks=checks,
         summary=summary,
     )
@@ -239,6 +290,10 @@ def success_response(calculation: CalculationResult) -> CalculationHttpResponse:
 
 def _money(value: Decimal) -> str:
     return format(value, ".2f")
+
+
+def _rate(value: Decimal) -> str:
+    return f"{value * Decimal('100'):.4f}%"
 
 
 def _scalar(value: Decimal | str) -> str:

@@ -29,6 +29,8 @@ class LoanPreviewRow:
     bank_name: str
     capitalize_interest: bool
     opening_principal: Decimal
+    annual_rate: Decimal
+    borrowing_time: date
     total_drawdowns: Decimal
     total_repayments: Decimal
     ending_principal: Decimal
@@ -126,7 +128,12 @@ class ExportServiceResult:
 
 
 def calculation_month(period: object) -> str:
-    return f"{period.year:04d}-{period.month:02d}"
+    if getattr(period, "is_exact_date_range", False):
+        return f"{period.start_date.isoformat()}至{period.end_date.isoformat()}"
+    start = f"{period.year:04d}-{period.month:02d}"
+    end_date = period.end_date
+    end = f"{end_date.year:04d}-{end_date.month:02d}"
+    return start if start == end else f"{start}至{end}"
 
 
 def _money(value: Decimal) -> Decimal:
@@ -244,6 +251,8 @@ def build_calculation_result(
             bank_name=result.loan.bank_name,
             capitalize_interest=result.loan.capitalize_interest,
             opening_principal=result.loan.opening_principal,
+            annual_rate=result.loan.annual_rate,
+            borrowing_time=result.loan.accrual_start,
             total_drawdowns=result.total_drawdowns,
             total_repayments=result.total_repayments,
             ending_principal=result.ending_principal,

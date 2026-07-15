@@ -25,14 +25,7 @@ from tests.fixtures.web.workbooks import loan_row, movement_row, workbook_bytes
 XLSX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-EXPECTED_EXPORT_SHEETS = [
-    "计提结果",
-    "分段明细",
-    "公司汇总",
-    "资本化汇总",
-    "校验结果",
-    "计算参数",
-]
+EXPECTED_EXPORT_SHEETS = ["计提结果"]
 WEB_ROOT = (
     Path(__file__).resolve().parents[3]
     / "src"
@@ -126,7 +119,7 @@ def test_homepage_health_and_local_assets_expose_the_browser_workflow() -> None:
     assert homepage.status_code == 200
     assert homepage.headers["content-type"].startswith("text/html")
     assert "贷款利息自动计提" in homepage.text
-    assert 'type="month"' in homepage.text
+    assert homepage.text.count('type="date"') == 2
     assert 'accept=".xlsx"' in homepage.text
     assert 'href="/template"' in homepage.text
     assert "计算并预览" in homepage.text
@@ -161,19 +154,15 @@ def test_homepage_uses_the_jinja_template_and_mounted_static_files() -> None:
         stylesheet = client.get("/static/styles.css")
         script = client.get("/static/app.js")
 
-    assert "按自然月校验贷款数据" in homepage.text
+    assert "按所选日期区间校验贷款数据" in homepage.text
     assert any(
         isinstance(route, Mount)
         and route.path == "/static"
         and route.name == "static"
         for route in application.routes
     )
-    assert stylesheet.text == (
-        WEB_ROOT / "static" / "styles.css"
-    ).read_text(encoding="utf-8")
-    assert script.text == (
-        WEB_ROOT / "static" / "app.js"
-    ).read_text(encoding="utf-8")
+    assert stylesheet.content == (WEB_ROOT / "static" / "styles.css").read_bytes()
+    assert script.content == (WEB_ROOT / "static" / "app.js").read_bytes()
 
 
 def test_template_download_has_exact_filename_media_type_and_sheets() -> None:
@@ -188,7 +177,7 @@ def test_template_download_has_exact_filename_media_type_and_sheets() -> None:
     )
     workbook = load_workbook(BytesIO(response.content), data_only=True)
     try:
-        assert workbook.sheetnames == ["贷款主表", "资金变动"]
+        assert workbook.sheetnames == ["贷款主表"]
     finally:
         workbook.close()
 
@@ -234,25 +223,170 @@ def test_calculate_returns_complete_success_preview_and_checks() -> None:
     assert body["source_sha256"]
     assert body["errors"] == []
     assert len(body["preview"]) == 2
-    rows = {row["loan_id"]: row for row in body["preview"]}
-    assert rows["L-CAP"] == {
-        "loan_id": "L-CAP",
+    assert body["preview"] == [
+      {
+        "sequence": 1,
         "company_name": "甲公司",
-        "contract_number": "HT-CAP",
         "bank_name": "甲银行",
         "opening_principal": "1000.00",
-        "total_drawdowns": "100.00",
-        "total_repayments": "50.00",
-        "ending_principal": "1050.00",
+        "annual_rate": "2.5000%",
+        "borrowing_time": "2025-01-01",
+        "accrued_interest": "2.08",
         "interest_days": 30,
-        "accrued_interest": rows["L-CAP"]["accrued_interest"],
-        "capitalized_interest": rows["L-CAP"]["accrued_interest"],
-        "expensed_interest": "0.00",
-    }
-    assert rows["L-EXP"]["capitalized_interest"] == "0.00"
-    assert rows["L-EXP"]["expensed_interest"] == rows["L-EXP"]["accrued_interest"]
+      },
+      {
+        "sequence": 2,
+        "company_name": "乙公司",
+        "bank_name": "甲银行",
+        "opening_principal": "2000.00",
+        "annual_rate": "3.6000%",
+        "borrowing_time": "2025-01-01",
+        "accrued_interest": "6.00",
+        "interest_days": 30,
+      },
+    ]
+    assert body["company_summaries"] == [
+        {
+            "company_name": "甲公司",
+            "opening_principal": "1000.00",
+            "accrued_interest": "2.08",
+        },
+        {
+            "company_name": "乙公司",
+            "opening_principal": "2000.00",
+            "accrued_interest": "6.00",
+        },
+    ]
     assert body["checks"]
     assert all(check["status"] == "通过" for check in body["checks"])
+
+
+def test_calculate_shows_filled_bank_and_leaves_optional_bank_blank() -> None:
+    payload = workbook_bytes(
+        loans=[
+            loan_row(company="甲公司", bank="甲银行", principal=1000),
+            loan_row(company="乙公司", bank=None, principal=2000),
+        ]
+    )
+
+    with _client() as client:
+        response = client.post(
+            "/calculate",
+            data={
+                "calculation_start_date": "2025-06-01",
+                "calculation_end_date": "2025-06-30",
+            },
+            files=_xlsx_upload("optional-bank.xlsx", payload),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [row["bank_name"] for row in body["preview"]] == ["甲银行", ""]
+    assert [row["opening_principal"] for row in body["preview"]] == [
+        "1000.00",
+        "2000.00",
+    ]
+    assert body["summary"]["opening_principal"] == "3000.00"
+
+
+def test_calculate_date_range_intersects_borrowing_and_repayment_dates() -> None:
+    payload = workbook_bytes(
+        loans=[
+            loan_row(
+                bank="整段贷款",
+                principal=1_000_000,
+                rate=0.036,
+                start=date(2025, 5, 1),
+                note=None,
+            ),
+            loan_row(
+                bank="区间内借还",
+                principal=1_000_000,
+                rate=0.036,
+                start=date(2025, 7, 10),
+                note="25.8.15还本金",
+            ),
+            loan_row(
+                bank="区间前已还清",
+                principal=1_000_000,
+                rate=0.036,
+                start=date(2025, 1, 1),
+                note="25.5.31还本金",
+            ),
+        ]
+    )
+
+    with _client() as client:
+        response = client.post(
+            "/calculate",
+            data={
+                "calculation_start_date": "2025-06-10",
+                "calculation_end_date": "2025-08-20",
+            },
+            files=_xlsx_upload("range.xlsx", payload),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["calculation_month"] == "2025-06-10至2025-08-20"
+    assert [
+        (row["bank_name"], row["interest_days"], row["accrued_interest"])
+        for row in body["preview"]
+    ] == [
+        ("整段贷款", 72, "7200.00"),
+        ("区间内借还", 36, "3600.00"),
+    ]
+
+
+def test_partial_repayment_note_is_split_before_and_after_repayment_day() -> None:
+    payload = workbook_bytes(
+        loans=[
+            loan_row(
+                company="杭州唯强医疗科技有限公司",
+                bank="测试银行",
+                principal=17_000_000,
+                rate=0.025,
+                start=date(2025, 9, 18),
+                note="26.6.9还700万",
+            )
+        ]
+    )
+
+    with _client() as client:
+        response = client.post(
+            "/calculate",
+            data={
+                "calculation_start_date": "2026-06-01",
+                "calculation_end_date": "2026-06-30",
+            },
+            files=_xlsx_upload("partial-repayment.xlsx", payload),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [
+        (
+            row["opening_principal"],
+            row["interest_days"],
+            row["accrued_interest"],
+        )
+        for row in body["preview"]
+    ] == [
+        ("17000000.00", 9, "10625.00"),
+        ("10000000.00", 21, "14583.33"),
+    ]
+    assert body["summary"]["loan_count"] == 1
+    assert body["summary"]["opening_principal"] == "17000000.00"
+    assert body["summary"]["total_repayments"] == "7000000.00"
+    assert body["summary"]["ending_principal"] == "10000000.00"
+    assert body["summary"]["accrued_interest"] == "25208.33"
+    assert body["company_summaries"] == [
+        {
+            "company_name": "杭州唯强医疗科技有限公司",
+            "opening_principal": "17000000.00",
+            "accrued_interest": "25208.33",
+        }
+    ]
 
 
 def test_calculate_accepts_known_historical_workbook_month() -> None:
@@ -268,8 +402,9 @@ def test_calculate_accepts_known_historical_workbook_month() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
-    rows = {row["loan_id"]: row for row in body["preview"]}
-    assert rows["历史:24全年:2"]["accrued_interest"] == "10763.89"
+    assert any(
+        row["accrued_interest"] == "10763.89" for row in body["preview"]
+    )
 
 
 def test_historical_workbook_missing_selected_month_has_actionable_error() -> None:
@@ -293,7 +428,7 @@ def test_historical_workbook_missing_selected_month_has_actionable_error() -> No
 
 def test_calculate_returns_atomic_structured_errors_without_preview() -> None:
     payload = workbook_bytes(
-        loans=[loan_row("", company="", rate=2.5)],
+        loans=[loan_row("", company="", bank="", rate=2.5)],
         movements=[
             movement_row(
                 "UNKNOWN",
@@ -318,14 +453,9 @@ def test_calculate_returns_atomic_structured_errors_without_preview() -> None:
     assert body["validation_status"] == "失败"
     assert body["preview"] == []
     assert body["checks"] == []
-    assert {error["error_code"] for error in body["errors"]} >= {
-        "LOAN_ID_REQUIRED",
+    assert {error["error_code"] for error in body["errors"]} == {
         "REQUIRED_VALUE_MISSING",
         "INTEREST_RATE_INVALID",
-        "MOVEMENT_LOAN_ID_NOT_FOUND",
-        "MOVEMENT_DATE_OUTSIDE_MONTH",
-        "MOVEMENT_TYPE_INVALID",
-        "MOVEMENT_AMOUNT_INVALID",
     }
     assert all(
         set(error)
@@ -355,7 +485,7 @@ def test_request_validation_errors_use_the_same_structured_contract() -> None:
             "sheet": None,
             "row": None,
             "column_or_field": "calculation_month",
-            "message": "计算月份必须使用 YYYY-MM 格式",
+                "message": "日期区间必须使用有效的 YYYY-MM-DD 格式，且结束日期不得早于开始日期",
         }
     ]
     assert missing_file.status_code == 422
@@ -389,7 +519,7 @@ def test_export_recomputes_current_submission_and_streams_exact_workbook() -> No
         )
 
     assert calculated.status_code == 200
-    assert calculated.json()["preview"][0]["loan_id"] == "L-OLD"
+    assert calculated.json()["preview"][0]["opening_principal"] == "1000.00"
     assert exported.status_code == 200
     assert exported.headers["content-type"] == XLSX_MEDIA_TYPE
     assert (
@@ -400,9 +530,28 @@ def test_export_recomputes_current_submission_and_streams_exact_workbook() -> No
     try:
         assert workbook.sheetnames == EXPECTED_EXPORT_SHEETS
         result_sheet = workbook["计提结果"]
-        headers = [cell.value for cell in result_sheet[1]]
-        loan_id_column = headers.index("贷款ID") + 1
-        assert result_sheet.cell(2, loan_id_column).value == "L-NEW"
+        assert result_sheet["A1"].value == "计提区间  2025-06-01 至 2025-06-30"
+        headers = [result_sheet.cell(3, column).value for column in range(1, 9)]
+        assert headers == [
+            "序号",
+            "公司名称",
+            "贷款银行",
+            "期初本金（元）",
+            "年利率",
+            "借款时间",
+            "区间应提利息（元）",
+            "区间应提利息天数",
+        ]
+        principal_column = headers.index("期初本金（元）") + 1
+        assert result_sheet.cell(4, principal_column).value == 3000
+        assert [result_sheet.cell(3, column).value for column in range(10, 13)] == [
+            "公司名称",
+            "本金合计（元）",
+            "利息合计（元）",
+        ]
+        assert result_sheet["J4"].value == "乙公司"
+        assert result_sheet["K4"].value == 3000
+        assert result_sheet["L4"].value == 6.25
     finally:
         workbook.close()
 

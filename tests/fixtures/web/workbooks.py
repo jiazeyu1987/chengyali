@@ -27,16 +27,12 @@ def loan_row(
     note: object = None,
 ) -> list[object]:
     return [
-        loan_id,
         company,
         contract,
         bank,
         principal,
         rate,
-        basis,
         start,
-        end,
-        capitalized,
         note,
     ]
 
@@ -65,21 +61,10 @@ def workbook_bytes(
         loan_sheet.append(values)
 
     rate_column = LOAN_TEMPLATE_HEADERS.index("年利率") + 1
-    start_column = LOAN_TEMPLATE_HEADERS.index("计息开始日期") + 1
-    end_column = LOAN_TEMPLATE_HEADERS.index("计息结束日期") + 1
+    start_column = LOAN_TEMPLATE_HEADERS.index("借款时间") + 1
     for row in range(2, loan_sheet.max_row + 1):
         loan_sheet.cell(row, rate_column).number_format = "0.00%"
         loan_sheet.cell(row, start_column).number_format = "yyyy-mm-dd"
-        loan_sheet.cell(row, end_column).number_format = "yyyy-mm-dd"
-
-    movement_sheet = workbook.create_sheet(MOVEMENT_SHEET)
-    movement_sheet.append(list(MOVEMENT_TEMPLATE_HEADERS))
-    for values in movements or []:
-        movement_sheet.append(values)
-
-    movement_date_column = MOVEMENT_TEMPLATE_HEADERS.index("变动日期") + 1
-    for row in range(2, movement_sheet.max_row + 1):
-        movement_sheet.cell(row, movement_date_column).number_format = "yyyy-mm-dd"
 
     stream = BytesIO()
     workbook.save(stream)

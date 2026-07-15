@@ -89,20 +89,20 @@ def test_june_whole_month_uses_loan_day_count_basis(
         (
             date(2025, 6, 10),
             date(2025, 12, 31),
-            date(2025, 6, 10),
+            date(2025, 6, 11),
             date(2025, 6, 30),
-            21,
+            20,
         ),
         (
             date(2025, 6, 10),
             date(2025, 6, 20),
-            date(2025, 6, 10),
+            date(2025, 6, 11),
             date(2025, 6, 20),
-            11,
+            10,
         ),
     ],
 )
-def test_partial_loan_dates_use_inclusive_closed_intersection(
+def test_start_date_is_exclusive_and_end_date_is_inclusive(
     start: date,
     end: date,
     actual_start: date,
@@ -249,7 +249,7 @@ def test_movements_before_and_after_partial_accrual_affect_only_relevant_values(
 
     assert len(result.segments) == 1
     assert result.segments[0].principal == Decimal("1500")
-    assert result.segments[0].days == 11
+    assert result.segments[0].days == 10
     assert result.ending_principal == Decimal("1300")
 
 
@@ -352,11 +352,10 @@ def test_rounding_occurs_once_after_unrounded_segment_sum() -> None:
     )
 
     assert [segment.unrounded_interest for segment in result.segments] == [
-        Decimal("0.004"),
         Decimal("0.003"),
     ]
-    assert result.unrounded_interest == Decimal("0.007")
-    assert result.accrued_interest == Decimal("0.01")
+    assert result.unrounded_interest == Decimal("0.003")
+    assert result.accrued_interest == Decimal("0.00")
     assert sum(
         segment.unrounded_interest.quantize(Decimal("0.01"))
         for segment in result.segments
@@ -383,15 +382,10 @@ def test_high_precision_segment_sum_is_exact_before_final_rounding() -> None:
     )
 
     assert [segment.unrounded_interest for segment in result.segments] == [
-        Decimal("1E+25"),
         Decimal("0.005"),
     ]
-    assert result.unrounded_interest == Decimal(
-        "10000000000000000000000000.005"
-    )
-    assert result.accrued_interest == Decimal(
-        "10000000000000000000000000.01"
-    )
+    assert result.unrounded_interest == Decimal("0.005")
+    assert result.accrued_interest == Decimal("0.01")
 
 
 @pytest.mark.parametrize(

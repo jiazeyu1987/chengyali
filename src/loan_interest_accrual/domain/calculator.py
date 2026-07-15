@@ -245,9 +245,9 @@ def calculate_loan(
             )
         )
 
-    actual_start = max(period.start_date, loan.accrual_start)
+    raw_actual_start = max(period.start_date, loan.accrual_start)
     actual_end = min(period.end_date, loan.accrual_end)
-    if actual_start > actual_end:
+    if raw_actual_start > actual_end:
         raise DomainValidationError(
             DomainError(
                 error_code=DomainErrorCode.LOAN_PERIOD_OUTSIDE_MONTH,
@@ -256,6 +256,14 @@ def calculate_loan(
                 loan_id=loan.loan_id,
             )
         )
+
+    # The loan's accrual-start date is the value date. Interest begins on the
+    # following day; loans that started before the selected month still begin
+    # at the first calendar day of that month.
+    actual_start = max(
+        period.start_date,
+        loan.accrual_start + timedelta(days=1),
+    )
 
     daily_movements = _aggregate_movements(period, loan, movements)
     (

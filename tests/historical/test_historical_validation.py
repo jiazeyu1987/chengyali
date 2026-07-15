@@ -63,10 +63,10 @@ def test_historical_validator_writes_deterministic_read_only_report() -> None:
     assert cases["hist-2024-01-row2-match"]["canonical_result"]["accrued_interest"] == "10763.89"
     assert cases["hist-2024-01-row2-match"]["historical_value"]["value"] == "10763.89"
     assert cases["hist-2024-01-row2-match"]["delta"] == "0.00"
-    assert cases["hist-2022-11-row3-rounding-reference"]["reason_code"] == "rounding_difference"
-    assert cases["hist-2022-11-row3-rounding-reference"]["canonical_result"]["accrued_interest"] == "7291.67"
+    assert cases["hist-2022-11-row3-rounding-reference"]["reason_code"] == "start_date_excluded"
+    assert cases["hist-2022-11-row3-rounding-reference"]["canonical_result"]["accrued_interest"] == "6944.44"
     assert cases["hist-2022-11-row3-rounding-reference"]["historical_value"]["value"] == "7291.66666666667"
-    assert cases["hist-2022-11-row3-rounding-reference"]["delta"] == "0.00333333333"
+    assert cases["hist-2022-11-row3-rounding-reference"]["delta"] == "-347.22666666667"
 
     for case in report["cases"]:
         assert case["reason_code"] in ALLOWED_REASON_CODES
@@ -144,14 +144,13 @@ def test_historical_upload_calculates_and_exports_expected_reference_value() -> 
             if type(cell.value) is str and cell.value.startswith("=")
         ]
         assert formulas == []
-        headers = [cell.value for cell in sheet[1]]
-        loan_id_col = headers.index("贷款ID") + 1
-        interest_col = headers.index("当月计提利息（元）") + 1
-        exported_rows = {
-            sheet.cell(row, loan_id_col).value: sheet.cell(row, interest_col).value
-            for row in range(2, sheet.max_row + 1)
+        headers = [cell.value for cell in sheet[3]]
+        interest_col = headers.index("区间应提利息（元）") + 1
+        exported_interests = {
+            Decimal(str(sheet.cell(row, interest_col).value))
+            for row in range(4, sheet.max_row + 1)
         }
-        assert Decimal(str(exported_rows["历史:24全年:2"])) == Decimal("10763.89")
+        assert Decimal("10763.89") in exported_interests
     finally:
         workbook.close()
 

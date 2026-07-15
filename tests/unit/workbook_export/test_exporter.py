@@ -53,10 +53,14 @@ def _money(value: object) -> Decimal:
 
 
 def _rows(sheet) -> list[dict[str, object]]:
-    headers = [cell.value for cell in sheet[1]]
+    headers = [sheet.cell(3, column).value for column in range(1, 9)]
     return [
         dict(zip(headers, values, strict=True))
-        for values in sheet.iter_rows(min_row=2, values_only=True)
+        for values in sheet.iter_rows(
+            min_row=4,
+            max_col=8,
+            values_only=True,
+        )
     ]
 
 
@@ -67,6 +71,7 @@ def _calculation():
                 "L-CAP-A",
                 company="甲公司",
                 contract="HT-A",
+                bank="甲银行A",
                 principal=1000000,
                 rate=0.0365,
                 basis=365,
@@ -76,6 +81,7 @@ def _calculation():
                 "L-EXP-A",
                 company="甲公司",
                 contract="HT-B",
+                bank="甲银行B",
                 principal=2000000,
                 rate=0.036,
                 basis=360,
@@ -85,6 +91,7 @@ def _calculation():
                 "L-CAP-B",
                 company="乙公司",
                 contract="HT-C",
+                bank="乙银行",
                 principal=500000,
                 rate=0.073,
                 basis=365,
@@ -116,25 +123,36 @@ def test_export_workbook_has_exact_sheets_fixed_values_and_package_is_clean() ->
     try:
         assert workbook.sheetnames == list(EXPORT_SHEET_NAMES)
         assert data_only_workbook.sheetnames == list(EXPORT_SHEET_NAMES)
-        assert [cell.value for cell in workbook[RESULT_SHEET][1]] == list(RESULT_HEADERS)
-        assert [cell.value for cell in workbook[SEGMENT_SHEET][1]] == list(SEGMENT_HEADERS)
-        assert [cell.value for cell in workbook[COMPANY_SUMMARY_SHEET][1]] == list(
-            COMPANY_SUMMARY_HEADERS
+        result_sheet = workbook[RESULT_SHEET]
+        assert result_sheet["A1"].value == "计提区间  2025-06-01 至 2025-06-30"
+        assert [result_sheet.cell(3, column).value for column in range(1, 9)] == list(
+            RESULT_HEADERS
         )
-        assert [cell.value for cell in workbook[CAPITALIZATION_SUMMARY_SHEET][1]] == list(
-            CAPITALIZATION_SUMMARY_HEADERS
-        )
-        assert [cell.value for cell in workbook[CHECK_SHEET][1]] == list(CHECK_HEADERS)
-        assert [cell.value for cell in workbook[PARAMETER_SHEET][1]] == list(
-            PARAMETER_HEADERS
-        )
+        assert [result_sheet.cell(3, column).value for column in range(10, 13)] == [
+            "公司名称",
+            "本金合计（元）",
+            "利息合计（元）",
+        ]
+        assert {str(merged) for merged in result_sheet.merged_cells.ranges} == {
+            "A1:H1",
+            "J1:L1",
+            "J2:L2",
+        }
 
         for sheet in workbook.worksheets:
             for row in sheet.iter_rows():
                 for cell in row:
                     assert cell.data_type != "f"
 
-        assert data_only_workbook[RESULT_SHEET]["A2"].value == "2025-06"
+        assert data_only_workbook[RESULT_SHEET]["A4"].value == 1
+        assert data_only_workbook[RESULT_SHEET]["B4"].value == "甲公司"
+        assert data_only_workbook[RESULT_SHEET]["C4"].value == "甲银行A"
+        assert data_only_workbook[RESULT_SHEET]["J4"].value == "甲公司"
+        assert data_only_workbook[RESULT_SHEET]["K4"].value == 3000000
+        assert data_only_workbook[RESULT_SHEET]["L4"].value == 9041.67
+        assert data_only_workbook[RESULT_SHEET]["J5"].value == "乙公司"
+        assert data_only_workbook[RESULT_SHEET]["K5"].value == 500000
+        assert data_only_workbook[RESULT_SHEET]["L5"].value == 3041.67
     finally:
         workbook.close()
         data_only_workbook.close()
@@ -164,100 +182,53 @@ def test_export_rows_summaries_checks_and_parameters_reconcile() -> None:
     workbook = load_workbook(BytesIO(output), data_only=True)
     try:
         result_rows = _rows(workbook[RESULT_SHEET])
-        segment_rows = _rows(workbook[SEGMENT_SHEET])
-        company_rows = _rows(workbook[COMPANY_SUMMARY_SHEET])
-        capitalization_rows = _rows(workbook[CAPITALIZATION_SUMMARY_SHEET])
-        check_rows = _rows(workbook[CHECK_SHEET])
-        parameter_rows = _rows(workbook[PARAMETER_SHEET])
     finally:
         workbook.close()
 
-    assert {row["贷款ID"] for row in result_rows} == {
-        "L-CAP-A",
-        "L-EXP-A",
-        "L-CAP-B",
-    }
-    assert len(result_rows) == 3
-
-    segment_interest_by_loan: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for row in segment_rows:
-        segment_interest_by_loan[row["贷款ID"]] += _decimal(
-            row["未舍入分段利息（元）"]
-        )
-    for row in result_rows:
-        assert _money(segment_interest_by_loan[row["贷款ID"]]) == _money(
-            row["当月计提利息（元）"]
-        )
-
-    result_by_company: dict[str, list[dict[str, object]]] = defaultdict(list)
-    for row in result_rows:
-        result_by_company[row["公司名称"]].append(row)
-    for row in company_rows:
-        expected_rows = result_by_company[row["公司名称"]]
-        assert row["贷款笔数"] == len(expected_rows)
-        assert _money(row["期初本金合计（元）"]) == sum(
-            _money(item["期初本金（元）"]) for item in expected_rows
-        )
-        assert _money(row["当月放款合计（元）"]) == sum(
-            _money(item["当月放款合计（元）"]) for item in expected_rows
-        )
-        assert _money(row["当月还本合计（元）"]) == sum(
-            _money(item["当月还本合计（元）"]) for item in expected_rows
-        )
-        assert _money(row["月末本金合计（元）"]) == sum(
-            _money(item["月末本金（元）"]) for item in expected_rows
-        )
-        assert _money(row["当月计提利息合计（元）"]) == sum(
-            _money(item["当月计提利息（元）"]) for item in expected_rows
-        )
-        assert _money(row["资本化利息合计（元）"]) == sum(
-            _money(item["资本化利息（元）"]) for item in expected_rows
-        )
-        assert _money(row["费用化利息合计（元）"]) == sum(
-            _money(item["费用化利息（元）"]) for item in expected_rows
-        )
-
-    capitalized_rows = [
-        row for row in result_rows if row["是否资本化"] == "是"
+    assert list(result_rows[0]) == list(RESULT_HEADERS)
+    assert len(result_rows) == 4
+    assert result_rows == [
+        {
+            "序号": 1,
+            "公司名称": "甲公司",
+            "贷款银行": "甲银行A",
+            "期初本金（元）": 1000000,
+            "年利率": 0.0365,
+            "借款时间": datetime(2025, 1, 1),
+            "区间应提利息（元）": 3041.67,
+            "区间应提利息天数": 30,
+        },
+        {
+            "序号": 2,
+            "公司名称": "甲公司",
+            "贷款银行": "甲银行B",
+            "期初本金（元）": 2000000,
+            "年利率": 0.036,
+            "借款时间": datetime(2025, 1, 1),
+            "区间应提利息（元）": 6000,
+            "区间应提利息天数": 30,
+        },
+        {
+            "序号": 3,
+            "公司名称": "乙公司",
+            "贷款银行": "乙银行",
+            "期初本金（元）": 500000,
+            "年利率": 0.073,
+            "借款时间": datetime(2025, 1, 1),
+            "区间应提利息（元）": 3041.67,
+            "区间应提利息天数": 30,
+        },
+        {
+            "序号": "合计",
+            "公司名称": None,
+            "贷款银行": None,
+            "期初本金（元）": 3500000,
+            "年利率": None,
+            "借款时间": None,
+            "区间应提利息（元）": 12083.34,
+            "区间应提利息天数": None,
+        },
     ]
-    capitalized_by_company: dict[str, list[dict[str, object]]] = defaultdict(list)
-    for row in capitalized_rows:
-        capitalized_by_company[row["公司名称"]].append(row)
-    total_row = next(row for row in capitalization_rows if row["公司名称"] == "合计")
-    company_cap_rows = [
-        row for row in capitalization_rows if row["公司名称"] != "合计"
-    ]
-    for row in company_cap_rows:
-        expected_rows = capitalized_by_company[row["公司名称"]]
-        assert row["资本化贷款笔数"] == len(expected_rows)
-        assert _money(row["资本化计息本金或月末本金汇总（元）"]) == sum(
-            _money(item["月末本金（元）"]) for item in expected_rows
-        )
-        assert _money(row["资本化利息合计（元）"]) == sum(
-            _money(item["资本化利息（元）"]) for item in expected_rows
-        )
-    assert _money(total_row["资本化利息合计（元）"]) == sum(
-        _money(row["资本化利息（元）"]) for row in capitalized_rows
-    )
-
-    assert all(row["状态"] == "通过" for row in check_rows)
-    assert {
-        "输入工作表结构校验",
-        "分段利息与逐笔结果勾稽",
-        "公司汇总与逐笔结果勾稽",
-    } <= {row["校验项"] for row in check_rows}
-
-    parameters = {row["参数"]: row["值"] for row in parameter_rows}
-    assert parameters["计算月份"] == "2025-06"
-    assert parameters["期间开始日期"] == "2025-06-01"
-    assert parameters["期间结束日期"] == "2025-06-30"
-    assert parameters["金额单位"] == "人民币元"
-    assert parameters["利率输入格式"] == "Excel 百分比"
-    assert parameters["放款生效规则"] == "次日起息"
-    assert parameters["还本生效规则"] == "计息至还本当日"
-    assert parameters["舍入规则"] == "逐笔最终 ROUND_HALF_UP 到 0.01"
-    assert parameters["应用版本"] == "0.1.0"
-    assert parameters["生成时间"] == "2026-07-10T12:30:00+00:00"
 
 
 def test_export_is_blocked_when_any_check_has_failed() -> None:

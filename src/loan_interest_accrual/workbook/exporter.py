@@ -7,9 +7,10 @@ from zipfile import ZipFile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-from loan_interest_accrual.application.results import CalculationResult
-from loan_interest_accrual.domain.decimal_math import exact_sum
+from loan_interest_accrual.application.results import CalculationResult, calculation_month
+from loan_interest_accrual.domain.decimal_math import exact_sum, quantize_money
 from loan_interest_accrual.version import __version__
 
 from .export_schema import (
@@ -33,6 +34,18 @@ class ExportInvariantError(ValueError):
     pass
 
 
+_NAVY = "18324B"
+_BLUE = "1769AA"
+_LINE = "D9DEE4"
+_PERIOD_FILL = "E8EEF3"
+_HEADER_FILL = "F4F6F8"
+_COMPANY_RESULT_HEADERS = (
+    "公司名称",
+    "本金合计（元）",
+    "利息合计（元）",
+)
+
+
 def _set_cell(cell: Cell, value: object) -> None:
     cell.value = value
     if type(value) is str:
@@ -43,6 +56,16 @@ def _append_row(sheet, values: tuple[object, ...] | list[object]) -> None:
     row_number = sheet.max_row + 1
     for column, value in enumerate(values, start=1):
         _set_cell(sheet.cell(row_number, column), value)
+
+
+def _write_row_at(
+    sheet,
+    row_number: int,
+    start_column: int,
+    values: tuple[object, ...] | list[object],
+) -> None:
+    for offset, value in enumerate(values):
+        _set_cell(sheet.cell(row_number, start_column + offset), value)
 
 
 def _write_sheet(sheet, headers: tuple[str, ...], rows: list[tuple[object, ...]]) -> None:
@@ -56,7 +79,7 @@ def _write_sheet(sheet, headers: tuple[str, ...], rows: list[tuple[object, ...]]
 def _format_sheet(sheet, headers: tuple[str, ...]) -> None:
     for index, header in enumerate(headers, start=1):
         column_letter = sheet.cell(1, index).column_letter
-        if "日期" in header:
+        if "日期" in header or header == "借款时间":
             number_format = "yyyy-mm-dd"
         elif header == "年利率":
             number_format = "0.000000%"
@@ -73,25 +96,215 @@ def _format_sheet(sheet, headers: tuple[str, ...]) -> None:
 
 
 def _result_rows(calculation: CalculationResult) -> list[tuple[object, ...]]:
+    rows: list[tuple[object, ...]] = []
+    for result in calculation.portfolio_result.loan_results:
+        if len(result.segments) <= 1:
+            display_rows = (
+                (
+                    result.loan.opening_principal,
+                    result.interest_days,
+                    result.accrued_interest,
+                ),
+            )
+        else:
+            rounded_interest = [
+                quantize_money(segment.unrounded_interest)
+                for segment in result.segments
+            ]
+            rounded_interest[-1] += result.accrued_interest - exact_sum(
+                rounded_interest
+            )
+            display_rows = tuple(
+                (segment.principal, segment.days, interest)
+                for segment, interest in zip(
+                    result.segments, rounded_interest, strict=True
+                )
+            )
+        for principal, days, interest in display_rows:
+            rows.append(
+                (
+                    len(rows) + 1,
+                    result.loan.company_name,
+                    result.loan.bank_name,
+                    principal,
+                    result.loan.annual_rate,
+                    result.loan.accrual_start,
+                    interest,
+                    days,
+                )
+            )
+    rows.append(
+        (
+            "合计",
+            "",
+            "",
+            exact_sum(row.opening_principal for row in calculation.loan_rows),
+            "",
+            "",
+            exact_sum(row.accrued_interest for row in calculation.loan_rows),
+            "",
+        )
+    )
+    return rows
+
+
+def _company_result_rows(
+    calculation: CalculationResult,
+) -> list[tuple[object, ...]]:
+    summary_by_company = {
+        row.company_name: row for row in calculation.company_summary_rows
+    }
     return [
         (
-            row.calculation_month,
-            row.loan_id,
-            row.company_name,
-            row.contract_number,
-            row.bank_name,
-            "是" if row.capitalize_interest else "否",
-            row.opening_principal,
-            row.total_drawdowns,
-            row.total_repayments,
-            row.ending_principal,
-            row.interest_days,
-            row.accrued_interest,
-            row.capitalized_interest,
-            row.expensed_interest,
+            company_name,
+            summary_by_company[company_name].opening_principal,
+            summary_by_company[company_name].accrued_interest,
         )
-        for row in calculation.loan_rows
+        for company_name in dict.fromkeys(
+            row.company_name for row in calculation.loan_rows
+        )
     ]
+
+
+def _write_result_sheet(sheet, calculation: CalculationResult) -> int:
+    period = calculation.period
+    period_text = (
+        f"计提区间  {period.start_date.isoformat()} 至 "
+        f"{period.end_date.isoformat()}"
+    )
+
+    sheet.merge_cells("A1:H1")
+    _set_cell(sheet["A1"], period_text)
+    _write_row_at(sheet, 3, 1, RESULT_HEADERS)
+
+    result_rows = _result_rows(calculation)
+    for row_number, values in enumerate(result_rows, start=4):
+        _write_row_at(sheet, row_number, 1, values)
+
+    sheet.merge_cells("J1:L1")
+    sheet.merge_cells("J2:L2")
+    _set_cell(sheet["J1"], "按公司汇总")
+    _set_cell(sheet["J2"], "公司本金与利息合计")
+    _write_row_at(sheet, 3, 10, _COMPANY_RESULT_HEADERS)
+    for row_number, values in enumerate(
+        _company_result_rows(calculation), start=4
+    ):
+        _write_row_at(sheet, row_number, 10, values)
+
+    return 3 + len(result_rows)
+
+
+def _format_result_sheet(
+    sheet,
+    calculation: CalculationResult,
+    total_row: int,
+) -> None:
+    thin_line = Side(style="thin", color=_LINE)
+    total_line = Side(style="thin", color="64748B")
+    period_fill = PatternFill("solid", fgColor=_PERIOD_FILL)
+    header_fill = PatternFill("solid", fgColor=_HEADER_FILL)
+
+    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.zoomScale = 85
+    sheet.freeze_panes = "A4"
+    sheet.row_dimensions[1].height = 28
+    sheet.row_dimensions[2].height = 24
+    sheet.row_dimensions[3].height = 32
+
+    for row in sheet.iter_rows(min_row=1, max_row=1, min_col=1, max_col=8):
+        for cell in row:
+            cell.fill = period_fill
+            cell.border = Border(bottom=Side(style="thin", color="B8C5D1"))
+    sheet["A1"].font = Font(name="Microsoft YaHei", size=15, bold=True, color=_NAVY)
+    sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
+
+    for row_number in (1, 2):
+        for cell in sheet.iter_rows(
+            min_row=row_number,
+            max_row=row_number,
+            min_col=10,
+            max_col=12,
+        ):
+            for item in cell:
+                item.fill = header_fill
+                item.border = Border(bottom=thin_line)
+    sheet["J1"].font = Font(name="Microsoft YaHei", size=10, bold=True, color=_BLUE)
+    sheet["J2"].font = Font(name="Microsoft YaHei", size=14, bold=True, color=_NAVY)
+    for coordinate in ("J1", "J2"):
+        sheet[coordinate].alignment = Alignment(horizontal="left", vertical="center")
+
+    for start_column, end_column in ((1, 8), (10, 12)):
+        for cell in sheet.iter_rows(
+            min_row=3,
+            max_row=3,
+            min_col=start_column,
+            max_col=end_column,
+        ):
+            for item in cell:
+                item.fill = header_fill
+                item.font = Font(name="Microsoft YaHei", size=10, bold=True, color="3F4954")
+                item.border = Border(bottom=thin_line)
+                item.alignment = Alignment(
+                    horizontal="center",
+                    vertical="center",
+                    wrap_text=True,
+                )
+
+    for row in sheet.iter_rows(min_row=4, max_row=total_row, min_col=1, max_col=8):
+        for cell in row:
+            cell.font = Font(name="Microsoft YaHei", size=10, color="17202A")
+            cell.border = Border(bottom=thin_line)
+            cell.alignment = Alignment(vertical="center")
+    for cell in sheet[total_row][0:8]:
+        cell.font = Font(name="Microsoft YaHei", size=10, bold=True, color="17202A")
+        cell.border = Border(top=total_line)
+
+    company_end_row = 3 + len(calculation.company_summary_rows)
+    for row in sheet.iter_rows(
+        min_row=4,
+        max_row=company_end_row,
+        min_col=10,
+        max_col=12,
+    ):
+        for cell in row:
+            cell.font = Font(name="Microsoft YaHei", size=10, color="17202A")
+            cell.border = Border(bottom=thin_line)
+            cell.alignment = Alignment(vertical="center")
+
+    for row_number in range(4, total_row + 1):
+        sheet.cell(row_number, 4).number_format = "#,##0.00"
+        sheet.cell(row_number, 5).number_format = "0.0000%"
+        sheet.cell(row_number, 6).number_format = "yyyy-mm-dd"
+        sheet.cell(row_number, 7).number_format = "#,##0.00"
+        sheet.cell(row_number, 1).alignment = Alignment(horizontal="center")
+        for column in (4, 5, 7, 8):
+            sheet.cell(row_number, column).alignment = Alignment(horizontal="right")
+    for row_number in range(4, company_end_row + 1):
+        for column in (11, 12):
+            sheet.cell(row_number, column).number_format = "#,##0.00"
+            sheet.cell(row_number, column).alignment = Alignment(horizontal="right")
+        sheet.cell(row_number, 10).alignment = Alignment(
+            horizontal="left",
+            vertical="center",
+            wrap_text=True,
+        )
+
+    widths = {
+        "A": 8,
+        "B": 30,
+        "C": 18,
+        "D": 18,
+        "E": 12,
+        "F": 14,
+        "G": 20,
+        "H": 20,
+        "I": 3,
+        "J": 30,
+        "K": 18,
+        "L": 18,
+    }
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
 
 
 def _segment_rows(calculation: CalculationResult) -> list[tuple[object, ...]]:
@@ -170,7 +383,10 @@ def _parameter_rows(
 ) -> list[tuple[object, ...]]:
     period = calculation.period
     return [
-        ("计算月份", f"{period.year:04d}-{period.month:02d}"),
+        (
+            "计算区间",
+            calculation_month(period),
+        ),
         ("期间开始日期", period.start_date.isoformat()),
         ("期间结束日期", period.end_date.isoformat()),
         ("金额单位", "人民币元"),
@@ -237,27 +453,10 @@ def export_calculation_workbook(
 
     workbook = Workbook()
     workbook.active.title = RESULT_SHEET
-    for sheet_name in EXPORT_SHEET_NAMES[1:]:
-        workbook.create_sheet(sheet_name)
 
-    _write_sheet(workbook[RESULT_SHEET], RESULT_HEADERS, _result_rows(calculation))
-    _write_sheet(workbook[SEGMENT_SHEET], SEGMENT_HEADERS, _segment_rows(calculation))
-    _write_sheet(
-        workbook[COMPANY_SUMMARY_SHEET],
-        COMPANY_SUMMARY_HEADERS,
-        _company_rows(calculation),
-    )
-    _write_sheet(
-        workbook[CAPITALIZATION_SUMMARY_SHEET],
-        CAPITALIZATION_SUMMARY_HEADERS,
-        _capitalization_rows(calculation),
-    )
-    _write_sheet(workbook[CHECK_SHEET], CHECK_HEADERS, _check_rows(calculation))
-    _write_sheet(
-        workbook[PARAMETER_SHEET],
-        PARAMETER_HEADERS,
-        _parameter_rows(calculation, timestamp),
-    )
+    result_sheet = workbook[RESULT_SHEET]
+    total_row = _write_result_sheet(result_sheet, calculation)
+    _format_result_sheet(result_sheet, calculation, total_row)
 
     stream = BytesIO()
     workbook.save(stream)

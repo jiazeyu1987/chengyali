@@ -26,7 +26,7 @@ def import_workbook(
     workbook = safe_result.workbook
     try:
         outcome = validate_workbook(workbook, period)
-        if outcome.errors and is_historical_workbook(workbook):
+        if outcome.errors and period.is_single_month and is_historical_workbook(workbook):
             outcome = validate_historical_workbook(workbook, period)
     finally:
         workbook.close()

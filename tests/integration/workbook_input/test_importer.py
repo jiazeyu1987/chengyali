@@ -18,6 +18,7 @@ from loan_interest_accrual.domain import (
     DomainValidationError,
     MovementType,
     NaturalMonth,
+    calculate_portfolio,
 )
 from loan_interest_accrual.workbook import (
     LOAN_SHEET,
@@ -50,16 +51,12 @@ def loan_row(
     note: object = None,
 ) -> list[object]:
     return [
-        loan_id,
         company,
         contract,
         bank,
         principal,
         rate,
-        basis,
         start,
-        end,
-        capitalized,
         note,
     ]
 
@@ -95,7 +92,7 @@ def workbook_bytes(
             rate_column = loan_headers.index("年利率") + 1
             for row in range(2, sheet.max_row + 1):
                 sheet.cell(row, rate_column).number_format = "0.00%"
-        for header in ("计息开始日期", "计息结束日期"):
+        for header in ("借款时间",):
             if header in loan_headers:
                 column = loan_headers.index(header) + 1
                 for row in range(2, sheet.max_row + 1):
@@ -168,13 +165,12 @@ def test_valid_workbook_parses_exact_ids_units_rates_and_domain_types() -> None:
     assert result.errors == ()
     assert result.calculable_input is not None
     assert [loan.loan_id for loan in result.calculable_input.loans] == [
-        "L-001",
-        "L-002",
+        "ROW-000002",
+        "ROW-000003",
     ]
     assert result.calculable_input.loans[0].annual_rate == Decimal("0.025")
     assert result.calculable_input.loans[1].day_count_basis is DayCountBasis.DAYS_360
-    assert result.calculable_input.movements[0].amount == Decimal("1")
-    assert result.calculable_input.movements[0].movement_type is MovementType.DRAWDOWN
+    assert result.calculable_input.movements == ()
 
 
 @pytest.mark.parametrize("filename", ["input.xls", "input.xlsm", "input.csv", "input"])
@@ -240,13 +236,11 @@ def test_missing_sheets_columns_duplicate_columns_and_aliases_are_not_inferred()
         workbook_bytes(include_loan_sheet=False, include_movement_sheet=False),
         PERIOD,
     )
-    assert codes(missing_sheets) == [
-        WorkbookErrorCode.SHEET_MISSING,
-        WorkbookErrorCode.SHEET_MISSING,
-    ]
+    assert codes(missing_sheets) == [WorkbookErrorCode.SHEET_MISSING]
 
     alias_headers = tuple(
-        "Loan ID" if header == "贷款ID" else header for header in LOAN_TEMPLATE_HEADERS
+        "Borrowing Date" if header == "借款时间" else header
+        for header in LOAN_TEMPLATE_HEADERS
     )
     missing_column = import_workbook(
         "input.xlsx",
@@ -255,12 +249,12 @@ def test_missing_sheets_columns_duplicate_columns_and_aliases_are_not_inferred()
     )
     assert WorkbookErrorCode.COLUMN_MISSING in codes(missing_column)
 
-    duplicate_headers = LOAN_TEMPLATE_HEADERS + ("贷款ID",)
+    duplicate_headers = LOAN_TEMPLATE_HEADERS + ("贷款银行",)
     duplicate_column = import_workbook(
         "input.xlsx",
         workbook_bytes(
             loan_headers=duplicate_headers,
-            loans=[loan_row() + ["ALIAS-ID"]],
+            loans=[loan_row() + ["重复银行"]],
         ),
         PERIOD,
     )
@@ -269,12 +263,14 @@ def test_missing_sheets_columns_duplicate_columns_and_aliases_are_not_inferred()
 
 def test_header_errors_do_not_hide_detectable_formula_errors() -> None:
     loan_headers = tuple(
-        header for header in LOAN_TEMPLATE_HEADERS if header != "贷款银行"
+        header for header in LOAN_TEMPLATE_HEADERS if header != "借款时间"
     )
+    loan_values = loan_row()
+    loan_values.pop(LOAN_TEMPLATE_HEADERS.index("借款时间"))
     payload = edit_workbook(
         workbook_bytes(
             loan_headers=loan_headers,
-            loans=[loan_row()[:-1]],
+            loans=[loan_values],
             movements=[movement_row()],
         ),
         lambda workbook: setattr(workbook[MOVEMENT_SHEET]["D2"], "value", "=1+1"),
@@ -282,16 +278,22 @@ def test_header_errors_do_not_hide_detectable_formula_errors() -> None:
 
     result = import_workbook("input.xlsx", payload, PERIOD)
 
-    assert codes(result) == [
-        WorkbookErrorCode.COLUMN_MISSING,
-        WorkbookErrorCode.FORMULA_NOT_ALLOWED,
-    ]
+    assert codes(result) == [WorkbookErrorCode.COLUMN_MISSING]
     assert result.errors[0].sheet == LOAN_SHEET
-    assert result.errors[0].column_or_field == "贷款银行"
-    assert result.errors[1].sheet == MOVEMENT_SHEET
-    assert result.errors[1].row == 2
-    assert result.errors[1].column_or_field == "变动金额（元）"
+    assert result.errors[0].column_or_field == "借款时间"
     assert result.calculable_input is None
+
+
+def test_blank_bank_name_is_optional_and_keeps_the_loan_calculable() -> None:
+    result = import_workbook(
+        "input.xlsx",
+        workbook_bytes(loans=[loan_row(bank=None)]),
+        PERIOD,
+    )
+
+    assert result.errors == ()
+    assert result.calculable_input is not None
+    assert result.calculable_input.loans[0].bank_name == ""
 
 
 def test_formula_cells_are_rejected_with_location() -> None:
@@ -304,23 +306,67 @@ def test_formula_cells_are_rejected_with_location() -> None:
     assert codes(result) == [WorkbookErrorCode.FORMULA_NOT_ALLOWED]
     assert result.errors[0].sheet == LOAN_SHEET
     assert result.errors[0].row == 2
-    assert result.errors[0].column_or_field == "期初本金（元）"
+    assert result.errors[0].column_or_field == "年利率"
 
 
-def test_blank_and_duplicate_loan_ids_and_ambiguous_movements_fail() -> None:
+def test_safe_arithmetic_formula_is_allowed_only_for_opening_principal() -> None:
+    payload = edit_workbook(
+        workbook_bytes(include_movement_sheet=False),
+        lambda workbook: setattr(
+            workbook[LOAN_SHEET]["D2"],
+            "value",
+            "=124098000-12409800",
+        ),
+    )
+
+    result = import_workbook("input.xlsx", payload, PERIOD)
+
+    assert result.errors == ()
+    assert result.calculable_input is not None
+    assert result.calculable_input.loans[0].opening_principal == Decimal("111688200")
+
+    unsupported = edit_workbook(
+        workbook_bytes(include_movement_sheet=False),
+        lambda workbook: setattr(workbook[LOAN_SHEET]["D2"], "value", "=A2"),
+    )
+    unsupported_result = import_workbook("input.xlsx", unsupported, PERIOD)
+    assert codes(unsupported_result) == [WorkbookErrorCode.FORMULA_NOT_ALLOWED]
+
+
+def test_blank_required_start_date_is_distinct_from_invalid_date() -> None:
+    blank = import_workbook(
+        "input.xlsx",
+        workbook_bytes(
+            loans=[loan_row(start=None)],
+            include_movement_sheet=False,
+        ),
+        PERIOD,
+    )
+    invalid = import_workbook(
+        "input.xlsx",
+        workbook_bytes(
+            loans=[loan_row(start="2025-06-01")],
+            include_movement_sheet=False,
+        ),
+        PERIOD,
+    )
+
+    assert codes(blank) == [WorkbookErrorCode.REQUIRED_VALUE_MISSING]
+    assert blank.errors[0].column_or_field == "借款时间"
+    assert codes(invalid) == [WorkbookErrorCode.DATE_INVALID]
+
+
+def test_loan_ids_and_movement_sheet_are_not_required() -> None:
     payload = workbook_bytes(
         loans=[loan_row("L-001"), loan_row("L-001"), loan_row("")],
         movements=[movement_row("L-001")],
     )
     result = import_workbook("input.xlsx", payload, PERIOD)
 
-    assert codes(result) == [
-        WorkbookErrorCode.LOAN_ID_DUPLICATE,
-        WorkbookErrorCode.LOAN_ID_DUPLICATE,
-        WorkbookErrorCode.LOAN_ID_REQUIRED,
-        WorkbookErrorCode.MOVEMENT_LOAN_ID_AMBIGUOUS,
-    ]
-    assert result.calculable_input is None
+    assert result.errors == ()
+    assert result.calculable_input is not None
+    assert len(result.calculable_input.loans) == 3
+    assert result.calculable_input.movements == ()
 
 
 def test_multiple_errors_are_collected_in_deterministic_sheet_row_field_order() -> None:
@@ -350,37 +396,10 @@ def test_multiple_errors_are_collected_in_deterministic_sheet_row_field_order() 
         (error.sheet, error.row, error.column_or_field, error.error_code)
         for error in result.errors
     ] == [
-        (LOAN_SHEET, 2, "贷款ID", WorkbookErrorCode.LOAN_ID_REQUIRED),
         (LOAN_SHEET, 2, "公司名称", WorkbookErrorCode.REQUIRED_VALUE_MISSING),
         (LOAN_SHEET, 2, "期初本金（元）", WorkbookErrorCode.VALUE_TYPE_INVALID),
         (LOAN_SHEET, 2, "年利率", WorkbookErrorCode.INTEREST_RATE_INVALID),
-        (LOAN_SHEET, 2, "计息基准", WorkbookErrorCode.DAY_COUNT_BASIS_INVALID),
-        (LOAN_SHEET, 2, "计息开始日期", WorkbookErrorCode.DATE_INVALID),
-        (LOAN_SHEET, 2, "是否资本化", WorkbookErrorCode.CAPITALIZATION_FLAG_INVALID),
-        (
-            MOVEMENT_SHEET,
-            2,
-            "贷款ID",
-            WorkbookErrorCode.MOVEMENT_LOAN_ID_NOT_FOUND,
-        ),
-        (
-            MOVEMENT_SHEET,
-            2,
-            "变动日期",
-            WorkbookErrorCode.MOVEMENT_DATE_OUTSIDE_MONTH,
-        ),
-        (
-            MOVEMENT_SHEET,
-            2,
-            "变动类型",
-            WorkbookErrorCode.MOVEMENT_TYPE_INVALID,
-        ),
-        (
-            MOVEMENT_SHEET,
-            2,
-            "变动金额（元）",
-            WorkbookErrorCode.MOVEMENT_AMOUNT_INVALID,
-        ),
+        (LOAN_SHEET, 2, "借款时间", WorkbookErrorCode.DATE_INVALID),
     ]
     assert result.calculable_input is None
 
@@ -391,51 +410,13 @@ def test_date_relationship_rate_basis_enum_and_amount_boundaries() -> None:
             workbook_bytes(
                 loans=[
                     loan_row(
-                        start=date(2024, 1, 1),
-                        end=date(2024, 12, 31),
-                    )
-                ]
-            ),
-            WorkbookErrorCode.LOAN_PERIOD_OUTSIDE_MONTH,
-        ),
-        (
-            workbook_bytes(
-                loans=[
-                    loan_row(
                         start=date(2025, 6, 20),
-                        end=date(2025, 6, 10),
+                        end=date(2025, 12, 31),
+                        note="15号归还本金",
                     )
                 ]
             ),
             WorkbookErrorCode.DATE_RANGE_INVALID,
-        ),
-        (
-            workbook_bytes(loans=[loan_row(basis="365")]),
-            WorkbookErrorCode.DAY_COUNT_BASIS_INVALID,
-        ),
-        (
-            workbook_bytes(loans=[loan_row(capitalized="Y")]),
-            WorkbookErrorCode.CAPITALIZATION_FLAG_INVALID,
-        ),
-        (
-            workbook_bytes(movements=[movement_row("", amount=1)]),
-            WorkbookErrorCode.MOVEMENT_LOAN_ID_REQUIRED,
-        ),
-        (
-            workbook_bytes(movements=[movement_row("UNKNOWN", amount=1)]),
-            WorkbookErrorCode.MOVEMENT_LOAN_ID_NOT_FOUND,
-        ),
-        (
-            workbook_bytes(movements=[movement_row(movement_type="借款")]),
-            WorkbookErrorCode.MOVEMENT_TYPE_INVALID,
-        ),
-        (
-            workbook_bytes(movements=[movement_row(amount=-1)]),
-            WorkbookErrorCode.MOVEMENT_AMOUNT_INVALID,
-        ),
-        (
-            workbook_bytes(movements=[movement_row(event_date=date(2025, 5, 31))]),
-            WorkbookErrorCode.MOVEMENT_DATE_OUTSIDE_MONTH,
         ),
         (
             workbook_bytes(loans=[loan_row(rate=0)]),
@@ -466,6 +447,71 @@ def test_date_relationship_rate_basis_enum_and_amount_boundaries() -> None:
     )
 
 
+def test_rows_outside_selected_month_are_silently_filtered() -> None:
+    period = NaturalMonth(2026, 3)
+    payload = workbook_bytes(
+        loans=[
+            loan_row(bank="尚未起息", start=date(2026, 4, 1), rate="无需校验"),
+            loan_row(
+                bank="此前已还清",
+                start=date(2025, 6, 22),
+                note="25.9.11还本金",
+                principal="无需校验",
+            ),
+            loan_row(
+                bank="仅部分还款",
+                start=date(2025, 12, 22),
+                note="25.12.19还10%",
+            ),
+            loan_row(bank="本月有效", start=date(2025, 12, 22), note=None),
+        ],
+        include_movement_sheet=False,
+    )
+
+    imported = import_workbook("input.xlsx", payload, period)
+
+    assert imported.errors == ()
+    assert imported.calculable_input is not None
+    assert [loan.bank_name for loan in imported.calculable_input.loans] == [
+        "仅部分还款",
+        "本月有效",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("start", "ignored_end", "note", "expected_days"),
+    [
+        (date(2024, 1, 1), date(2024, 12, 31), None, 30),
+        (date(2025, 1, 1), date(2025, 6, 21), None, 30),
+        (date(2025, 1, 1), date(2025, 6, 27), None, 30),
+        (date(2025, 6, 10), date(2025, 6, 12), None, 20),
+        (date(2025, 6, 10), date(2025, 6, 12), "15号归还本金", 5),
+        (date(2025, 1, 1), "不是日期", None, 30),
+    ],
+)
+def test_interest_end_date_is_ignored_for_day_count(
+    start: date,
+    ignored_end: object,
+    note: str | None,
+    expected_days: int,
+) -> None:
+    payload = workbook_bytes(
+        loans=[loan_row(start=start, end=ignored_end, note=note)],
+        include_movement_sheet=False,
+    )
+
+    imported = import_workbook("input.xlsx", payload, PERIOD)
+
+    assert imported.errors == ()
+    assert imported.calculable_input is not None
+    calculation = calculate_portfolio(
+        PERIOD,
+        imported.calculable_input.loans,
+        imported.calculable_input.movements,
+    )
+    assert calculation.loan_results[0].interest_days == expected_days
+
+
 def test_negative_principal_uses_domain_calculator_and_locates_movement() -> None:
     payload = workbook_bytes(
         loans=[loan_row(principal=100)],
@@ -473,10 +519,9 @@ def test_negative_principal_uses_domain_calculator_and_locates_movement() -> Non
     )
     result = import_workbook("input.xlsx", payload, PERIOD)
 
-    assert codes(result) == [WorkbookErrorCode.NEGATIVE_PRINCIPAL]
-    assert result.errors[0].sheet == MOVEMENT_SHEET
-    assert result.errors[0].row == 2
-    assert result.calculable_input is None
+    assert result.errors == ()
+    assert result.calculable_input is not None
+    assert result.calculable_input.movements == ()
 
 
 def test_portfolio_business_validation_errors_are_mapped_to_source_rows(
@@ -484,15 +529,14 @@ def test_portfolio_business_validation_errors_are_mapped_to_source_rows(
 ) -> None:
     def fail_portfolio(period, loans, movements):
         assert period is PERIOD
-        assert tuple(loan.loan_id for loan in loans) == ("L-001",)
-        assert tuple(movement.loan_id for movement in movements) == ("L-001",)
+        assert tuple(loan.loan_id for loan in loans) == ("ROW-000002",)
+        assert tuple(movements) == ()
         raise DomainValidationError(
             DomainError(
                 error_code=DomainErrorCode.NEGATIVE_PRINCIPAL,
                 column_or_field="principal",
                 message="principal becomes negative at an effective event boundary",
-                loan_id="L-001",
-                event_date=date(2025, 6, 15),
+                loan_id="ROW-000002",
             )
         )
 
@@ -503,8 +547,7 @@ def test_portfolio_business_validation_errors_are_mapped_to_source_rows(
 
     assert codes(result) == [WorkbookErrorCode.NEGATIVE_PRINCIPAL]
     assert result.errors[0].sheet == MOVEMENT_SHEET
-    assert result.errors[0].row == 2
-    assert result.errors[0].column_or_field == "变动金额（元）"
+    assert result.errors[0].row is None
     assert result.calculable_input is None
 
 
@@ -529,7 +572,7 @@ def test_same_day_movement_order_is_preserved_as_input_but_calculates_by_loan_id
                 for movement in result.calculable_input.movements
             )
         )
-    assert len(endings) == 6
+    assert endings == {()}
 
 
 def test_row_limits_allow_boundary_and_reject_exceedance_without_truncation() -> None:
@@ -562,8 +605,143 @@ def test_row_limits_allow_boundary_and_reject_exceedance_without_truncation() ->
             MAX_MOVEMENT_ROWS + 2, 1, "OVER"
         ),
     )
-    assert codes(import_workbook("input.xlsx", movement_over, PERIOD)) == [
-        WorkbookErrorCode.MOVEMENT_ROW_LIMIT_EXCEEDED
+    assert codes(import_workbook("input.xlsx", movement_over, PERIOD)) == []
+
+
+def test_optional_fields_may_be_blank_and_blank_end_defaults_to_month_end() -> None:
+    payload = workbook_bytes(
+        loans=[
+            loan_row(
+                company="甲公司",
+                contract=None,
+                start=date(2025, 6, 10),
+                end=None,
+                note=None,
+            )
+        ],
+        include_movement_sheet=False,
+    )
+
+    result = import_workbook("input.xlsx", payload, PERIOD)
+
+    assert result.errors == ()
+    assert result.calculable_input is not None
+    loan = result.calculable_input.loans[0]
+    assert loan.company_name == "甲公司"
+    assert loan.contract_number == ""
+    assert loan.accrual_end == date(2025, 6, 30)
+
+
+@pytest.mark.parametrize(
+    ("start", "note", "expected_days"),
+    [
+        (date(2025, 1, 1), None, 30),
+        (date(2025, 1, 1), "15号归还本金", 15),
+        (date(2025, 6, 10), None, 20),
+        (date(2025, 6, 10), "15号归还本金", 5),
+        (date(2025, 6, 30), None, 0),
+        (date(2025, 1, 1), "2025年6月20日归还本金", 20),
+        (date(2025, 1, 1), "归还本金日期25号", 25),
+        (date(2025, 1, 1), "25.6.27还本金", 27),
+        (date(2025, 1, 1), "2025.6.27还本金", 27),
+        (date(2025, 1, 1), "25-6-27换本金", 27),
+    ],
+)
+def test_interest_days_follow_start_and_repayment_note_rules(
+    start: date,
+    note: str | None,
+    expected_days: int,
+) -> None:
+    payload = workbook_bytes(
+        loans=[loan_row(start=start, end=None, note=note)],
+        include_movement_sheet=False,
+    )
+
+    imported = import_workbook("input.xlsx", payload, PERIOD)
+
+    assert imported.errors == ()
+    assert imported.calculable_input is not None
+    calculation = calculate_portfolio(
+        PERIOD,
+        imported.calculable_input.loans,
+        imported.calculable_input.movements,
+    )
+    assert calculation.loan_results[0].interest_days == expected_days
+
+
+def test_partial_repayment_note_reduces_principal_after_repayment_day() -> None:
+    payload = workbook_bytes(
+        loans=[
+            loan_row(
+                principal=17_000_000,
+                rate=0.025,
+                start=date(2025, 1, 1),
+                end=None,
+                note="25.6.9还700万",
+            )
+        ],
+        include_movement_sheet=False,
+    )
+
+    imported = import_workbook("input.xlsx", payload, PERIOD)
+
+    assert imported.errors == ()
+    assert imported.calculable_input is not None
+    assert len(imported.calculable_input.movements) == 1
+    movement = imported.calculable_input.movements[0]
+    assert movement.event_date == date(2025, 6, 9)
+    assert movement.amount == Decimal("7000000")
+    calculation = calculate_portfolio(
+        PERIOD,
+        imported.calculable_input.loans,
+        imported.calculable_input.movements,
+    )
+    result = calculation.loan_results[0]
+    assert [
+        (segment.principal, segment.days) for segment in result.segments
+    ] == [
+        (Decimal("17000000"), 9),
+        (Decimal("10000000"), 21),
+    ]
+    assert result.total_repayments == Decimal("7000000")
+    assert result.ending_principal == Decimal("10000000")
+    assert result.accrued_interest == Decimal("25208.33")
+
+
+def test_partial_repayment_before_range_uses_reduced_opening_principal() -> None:
+    payload = workbook_bytes(
+        loans=[
+            loan_row(
+                principal=17_000_000,
+                rate=0.025,
+                start=date(2025, 1, 1),
+                end=None,
+                note="25.5.9已还700万元",
+            )
+        ],
+        include_movement_sheet=False,
+    )
+
+    imported = import_workbook("input.xlsx", payload, PERIOD)
+
+    assert imported.errors == ()
+    assert imported.calculable_input is not None
+    assert imported.calculable_input.movements == ()
+    assert imported.calculable_input.loans[0].opening_principal == Decimal(
+        "10000000"
+    )
+
+
+def test_invalid_repayment_day_in_note_is_reported() -> None:
+    payload = workbook_bytes(
+        loans=[loan_row(end=None, note="31号归还本金")],
+        include_movement_sheet=False,
+    )
+
+    result = import_workbook("input.xlsx", payload, NaturalMonth(2025, 2))
+
+    assert [(error.column_or_field, error.error_code) for error in result.errors] == [
+        ("备注", WorkbookErrorCode.DATE_INVALID)
     ]
 
 

@@ -8,16 +8,10 @@ LOAN_SHEET = "贷款主表"
 MOVEMENT_SHEET = "资金变动"
 
 LOAN_REQUIRED_HEADERS = (
-    "贷款ID",
     "公司名称",
-    "贷款合同号",
-    "贷款银行",
     "期初本金（元）",
     "年利率",
-    "计息基准",
-    "计息开始日期",
-    "计息结束日期",
-    "是否资本化",
+    "借款时间",
 )
 MOVEMENT_REQUIRED_HEADERS = (
     "贷款ID",
@@ -25,8 +19,16 @@ MOVEMENT_REQUIRED_HEADERS = (
     "变动类型",
     "变动金额（元）",
 )
-OPTIONAL_HEADERS = ("备注",)
-LOAN_TEMPLATE_HEADERS = LOAN_REQUIRED_HEADERS + OPTIONAL_HEADERS
+OPTIONAL_HEADERS = ("贷款合同号", "贷款银行", "备注")
+LOAN_TEMPLATE_HEADERS = (
+    "公司名称",
+    "贷款合同号",
+    "贷款银行",
+    "期初本金（元）",
+    "年利率",
+    "借款时间",
+    "备注",
+)
 MOVEMENT_TEMPLATE_HEADERS = MOVEMENT_REQUIRED_HEADERS + OPTIONAL_HEADERS
 
 CURRENCY_NUMBER_FORMAT = '#,##0.00'

@@ -77,21 +77,33 @@ class Loan:
 
     def __post_init__(self) -> None:
         _required_text(self.loan_id, "loan_id", DomainErrorCode.LOAN_ID_REQUIRED)
-        _required_text(
-            self.company_name,
-            "company_name",
-            DomainErrorCode.REQUIRED_VALUE_MISSING,
-        )
-        _required_text(
-            self.contract_number,
-            "contract_number",
-            DomainErrorCode.REQUIRED_VALUE_MISSING,
-        )
-        _required_text(
-            self.bank_name,
-            "bank_name",
-            DomainErrorCode.REQUIRED_VALUE_MISSING,
-        )
+        if type(self.company_name) is not str:
+            raise DomainValidationError(
+                DomainError(
+                    error_code=DomainErrorCode.VALUE_TYPE_INVALID,
+                    column_or_field="company_name",
+                    message="company_name must be text when provided",
+                    loan_id=self.loan_id,
+                )
+            )
+        if type(self.contract_number) is not str:
+            raise DomainValidationError(
+                DomainError(
+                    error_code=DomainErrorCode.VALUE_TYPE_INVALID,
+                    column_or_field="contract_number",
+                    message="contract_number must be text when provided",
+                    loan_id=self.loan_id,
+                )
+            )
+        if type(self.bank_name) is not str:
+            raise DomainValidationError(
+                DomainError(
+                    error_code=DomainErrorCode.VALUE_TYPE_INVALID,
+                    column_or_field="bank_name",
+                    message="bank_name must be text when provided",
+                    loan_id=self.loan_id,
+                )
+            )
         _required_decimal(self.opening_principal, "opening_principal", self.loan_id)
         _required_decimal(self.annual_rate, "annual_rate", self.loan_id)
         if self.opening_principal < Decimal("0"):

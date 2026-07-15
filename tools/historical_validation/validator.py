@@ -19,7 +19,7 @@ from loan_interest_accrual.domain import (
 )
 
 
-ALLOWED_REASON_CODES = frozenset(("match", "rounding_difference"))
+ALLOWED_REASON_CODES = frozenset(("match", "start_date_excluded"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +119,7 @@ MANIFEST: dict[str, Any] = {
                     "capitalize_interest": False,
                 }
             },
-            "expected_reason_code": "rounding_difference",
+            "expected_reason_code": "start_date_excluded",
         },
     ],
 }

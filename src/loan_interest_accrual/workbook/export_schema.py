@@ -7,32 +7,21 @@ PARAMETER_SHEET = "计算参数"
 
 EXPORT_SHEET_NAMES = (
     RESULT_SHEET,
-    SEGMENT_SHEET,
-    COMPANY_SUMMARY_SHEET,
-    CAPITALIZATION_SUMMARY_SHEET,
-    CHECK_SHEET,
-    PARAMETER_SHEET,
 )
 
 RESULT_HEADERS = (
-    "计算月份",
-    "贷款ID",
+    "序号",
     "公司名称",
-    "贷款合同号",
     "贷款银行",
-    "是否资本化",
     "期初本金（元）",
-    "当月放款合计（元）",
-    "当月还本合计（元）",
-    "月末本金（元）",
-    "计息天数",
-    "当月计提利息（元）",
-    "资本化利息（元）",
-    "费用化利息（元）",
+    "年利率",
+    "借款时间",
+    "区间应提利息（元）",
+    "区间应提利息天数",
 )
 
 SEGMENT_HEADERS = (
-    "计算月份",
+    "计算区间",
     "贷款ID",
     "分段序号",
     "分段开始日期",
@@ -78,7 +67,7 @@ PARAMETER_HEADERS = (
 )
 
 PARAMETER_NAMES = (
-    "计算月份",
+    "计算区间",
     "期间开始日期",
     "期间结束日期",
     "金额单位",
