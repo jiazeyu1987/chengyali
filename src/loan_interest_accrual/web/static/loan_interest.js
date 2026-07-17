@@ -1,5 +1,6 @@
 const form = document.querySelector("#calculation-form");
-const monthInput = document.querySelector("#calculation-month");
+const startDateInput = document.querySelector("#calculation-start-date");
+const endDateInput = document.querySelector("#calculation-end-date");
 const fileInput = document.querySelector("#workbook-file");
 const calculateButton = document.querySelector("#calculate-button");
 const exportButton = document.querySelector("#export-button");
@@ -11,10 +12,9 @@ const errorBody = document.querySelector("#error-body");
 const errorCount = document.querySelector("#error-count");
 const previewSection = document.querySelector("#preview-section");
 const previewBody = document.querySelector("#preview-body");
-const assetCount = document.querySelector("#asset-count");
-const originalTotal = document.querySelector("#original-total");
 const calculationPeriod = document.querySelector("#calculation-period");
-const previewTotal = document.querySelector("#preview-total");
+const companySummaryBody = document.querySelector("#company-summary-body");
+const loanCount = document.querySelector("#loan-count");
 const validationStatus = document.querySelector("#validation-status");
 const usageButton = document.querySelector("#usage-button");
 const usageDialog = document.querySelector("#usage-dialog");
@@ -111,7 +111,8 @@ async function waitForDesktopShutdown(statusUrl) {
 
 function buildFormData() {
   const data = new FormData();
-  data.append("calculation_month", monthInput.value);
+  data.append("calculation_start_date", startDateInput.value);
+  data.append("calculation_end_date", endDateInput.value);
   if (fileInput.files.length > 0) {
     data.append("file", fileInput.files[0]);
   }
@@ -148,59 +149,50 @@ function showErrors(errors) {
 function showPreview(payload) {
   errorSection.hidden = true;
   previewBody.replaceChildren();
-  previewTotal.replaceChildren();
+  companySummaryBody.replaceChildren();
+  calculationPeriod.textContent = (payload.calculation_month ?? "-")
+    .replace("至", " 至 ");
 
   for (const item of payload.preview) {
     const row = document.createElement("tr");
     row.append(
       textCell(item.sequence),
-      textCell(item.primary_category),
-      textCell(item.name),
-      textCell(item.expense_category),
-      textCell(item.original_value),
-      textCell(item.residual_value),
-      textCell(item.amortization_start),
-      textCell(item.booking_month),
-      textCell(item.amortization_term_months),
-      textCell(item.monthly_amortization),
-      textCell(item.cumulative_months),
-      textCell(item.cumulative_amortization),
-      textCell(item.current_required_amortization),
-      textCell(item.current_actual_amortization),
-      textCell(item.difference),
-      textCell(item.ending_net_value),
+      textCell(item.company_name),
+      textCell(item.bank_name),
+      textCell(item.opening_principal),
+      textCell(item.annual_rate),
+      textCell(item.borrowing_time),
+      textCell(item.accrued_interest),
+      textCell(item.interest_days),
     );
-    if (item.fully_amortized) {
-      row.classList.add("fully-amortized-row");
-    }
     previewBody.append(row);
   }
 
-  const total = document.createElement("tr");
-  total.className = "total-row";
-  total.append(
-    textCell(""),
+  const totalRow = document.createElement("tr");
+  totalRow.className = "total-row";
+  totalRow.append(
     textCell("合计"),
     textCell(""),
     textCell(""),
-    textCell(payload.summary.original_value),
+    textCell(payload.summary?.opening_principal ?? "0.00"),
     textCell(""),
-    textCell("/"),
-    textCell("/"),
-    textCell("/"),
-    textCell(payload.summary.monthly_amortization),
-    textCell("/"),
-    textCell(payload.summary.cumulative_amortization),
-    textCell(payload.summary.current_required_amortization),
-    textCell(payload.summary.current_actual_amortization),
     textCell(""),
-    textCell(payload.summary.ending_net_value),
+    textCell(payload.summary?.accrued_interest ?? "0.00"),
+    textCell(""),
   );
-  previewTotal.append(total);
+  previewBody.append(totalRow);
 
-  assetCount.textContent = payload.summary.asset_count;
-  originalTotal.textContent = payload.summary.original_value;
-  calculationPeriod.textContent = payload.calculation_month;
+  for (const company of payload.company_summaries ?? []) {
+    const row = document.createElement("tr");
+    row.append(
+      textCell(company.company_name),
+      textCell(company.opening_principal),
+      textCell(company.accrued_interest),
+    );
+    companySummaryBody.append(row);
+  }
+
+  loanCount.textContent = payload.summary?.loan_count ?? payload.preview.length;
   validationStatus.textContent = payload.validation_status;
   previewSection.hidden = false;
   exportButton.disabled = false;
@@ -228,7 +220,7 @@ form.addEventListener("submit", async (event) => {
   setBusy(true, "正在计算");
 
   try {
-    const response = await fetch("/calculate", {
+    const response = await fetch("/loan-interest/calculate", {
       method: "POST",
       body: buildFormData(),
     });
@@ -258,7 +250,7 @@ exportButton.addEventListener("click", async () => {
   setBusy(true, "正在导出");
 
   try {
-    const response = await fetch("/export", {
+    const response = await fetch("/loan-interest/export", {
       method: "POST",
       body: buildFormData(),
     });
@@ -274,7 +266,7 @@ exportButton.addEventListener("click", async () => {
     const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i);
     const filename = encodedName
       ? decodeURIComponent(encodedName[1])
-      : "摊销结果.xlsx";
+      : "计提结果.xlsx";
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = objectUrl;
@@ -374,8 +366,10 @@ fileInput.addEventListener("change", () => {
   exportButton.disabled = true;
 });
 
-monthInput.addEventListener("change", () => {
-  previewSection.hidden = true;
-  errorSection.hidden = true;
-  exportButton.disabled = true;
-});
+for (const dateInput of [startDateInput, endDateInput]) {
+  dateInput.addEventListener("change", () => {
+    previewSection.hidden = true;
+    errorSection.hidden = true;
+    exportButton.disabled = true;
+  });
+}

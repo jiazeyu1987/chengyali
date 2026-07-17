@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .loan_proxy_routes import router as loan_proxy_router
 from .routes import router
 
 
@@ -11,7 +12,7 @@ WEB_ROOT = Path(__file__).resolve().parent
 
 def create_app() -> FastAPI:
     application = FastAPI(
-        title="贷款利息自动计提",
+        title="无形资产及长摊自动计提",
         docs_url=None,
         redoc_url=None,
     )
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
         name="static",
     )
     application.include_router(router)
+    application.include_router(loan_proxy_router)
     return application
 
 

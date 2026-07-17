@@ -19,11 +19,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from loan_interest_accrual.application import (
-    calculate_submission,
-    export_submission,
+    calculate_amortization_submission,
+    export_amortization_submission,
 )
 from loan_interest_accrual.domain import DomainValidationError, NaturalMonth
-from loan_interest_accrual.workbook import generate_standard_template
+from loan_interest_accrual.workbook import generate_amortization_template
 
 from .desktop_actions import (
     DesktopActionError,
@@ -43,7 +43,7 @@ from .http_models import (
 XLSX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-TEMPLATE_FILENAME = "贷款利息计提输入模板.xlsx"
+TEMPLATE_FILENAME = "无形资产长摊计提输入模板.xlsx"
 MONTH_PATTERN = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
 DATE_PATTERN = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$")
 WEB_ROOT = Path(__file__).resolve().parent
@@ -69,7 +69,7 @@ def health() -> dict[str, str]:
 @router.get("/template")
 def download_template() -> Response:
     return Response(
-        generate_standard_template(),
+        generate_amortization_template(),
         media_type=XLSX_MEDIA_TYPE,
         headers={
             "Content-Disposition": _attachment_disposition(TEMPLATE_FILENAME)
@@ -178,7 +178,9 @@ async def calculate(
         return _json(validated, 422)
     period, upload = validated
     source_bytes = await _read_upload(upload)
-    result = calculate_submission(upload.filename or "", source_bytes, period)
+    result = calculate_amortization_submission(
+        upload.filename or "", source_bytes, period
+    )
     if result.errors or result.calculation is None:
         response = failure_response(
             (application_error_to_http(error) for error in result.errors),
@@ -211,7 +213,9 @@ async def export(
         return _json(validated, 422)
     period, upload = validated
     source_bytes = await _read_upload(upload)
-    result = export_submission(upload.filename or "", source_bytes, period)
+    result = export_amortization_submission(
+        upload.filename or "", source_bytes, period
+    )
     if result.errors or result.output is None:
         response = failure_response(
             (application_error_to_http(error) for error in result.errors),
