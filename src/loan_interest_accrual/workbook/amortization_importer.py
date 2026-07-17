@@ -135,26 +135,27 @@ def import_amortization_workbook(
                         )
                     )
             if not errors:
-                mapping = {header: text_headers.index(header) + 1 for header in AMORTIZATION_HEADERS}
-                data_rows = [
-                    row
-                    for row in range(2, sheet.max_row + 1)
-                    if any(sheet.cell(row, mapping[h]).value is not None for h in AMORTIZATION_HEADERS)
-                ]
-                if len(data_rows) > MAX_AMORTIZATION_ROWS:
-                    errors.append(
-                        _error(
-                            WorkbookErrorCode.ASSET_ROW_LIMIT_EXCEEDED,
-                            None,
-                            AMORTIZATION_SHEET,
-                            f"asset rows exceed {MAX_AMORTIZATION_ROWS}",
-                        )
-                    )
-                for row in data_rows[:MAX_AMORTIZATION_ROWS]:
-                    values = {h: sheet.cell(row, mapping[h]).value for h in AMORTIZATION_HEADERS}
+                header_positions = {
+                    header: column
+                    for column, header in enumerate(text_headers, start=1)
+                    if header in AMORTIZATION_HEADERS
+                }
+                data_row_count = 0
+                for row in range(2, sheet.max_row + 1):
+                    cells = {
+                        header: sheet.cell(row, header_positions[header])
+                        for header in AMORTIZATION_HEADERS
+                    }
+                    if not any(cell.value is not None for cell in cells.values()):
+                        continue
+                    data_row_count += 1
+                    if data_row_count > MAX_AMORTIZATION_ROWS:
+                        continue
+
+                    values = {header: cell.value for header, cell in cells.items()}
                     row_errors: list[WorkbookError] = []
-                    for header in AMORTIZATION_HEADERS:
-                        if sheet.cell(row, mapping[header]).data_type == "f":
+                    for header, cell in cells.items():
+                        if cell.data_type == "f":
                             row_errors.append(
                                 _error(
                                     WorkbookErrorCode.FORMULA_NOT_ALLOWED,
@@ -250,7 +251,17 @@ def import_amortization_workbook(
                                 amortization_term_months=term,
                             )
                         )
-                if not data_rows:
+
+                if data_row_count > MAX_AMORTIZATION_ROWS:
+                    errors.append(
+                        _error(
+                            WorkbookErrorCode.ASSET_ROW_LIMIT_EXCEEDED,
+                            None,
+                            AMORTIZATION_SHEET,
+                            f"asset rows exceed {MAX_AMORTIZATION_ROWS}",
+                        )
+                    )
+                if data_row_count == 0:
                     errors.append(
                         _error(
                             WorkbookErrorCode.REQUIRED_VALUE_MISSING,

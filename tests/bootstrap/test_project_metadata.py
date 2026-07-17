@@ -9,13 +9,13 @@ REQUIREMENTS_PATH = PROJECT_ROOT / "requirements.txt"
 
 EXPECTED_RUNTIME_DEPENDENCIES = {
     "fastapi": "0.115.5",
+    "httpx": "0.28.1",
     "jinja2": "3.1.6",
     "openpyxl": "3.1.5",
     "python-multipart": "0.0.22",
     "uvicorn": "0.32.0",
 }
 EXPECTED_TEST_DEPENDENCIES = {
-    "httpx": "0.28.1",
     "playwright": "1.58.0",
     "pytest": "8.4.2",
 }
