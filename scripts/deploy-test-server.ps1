@@ -10,15 +10,15 @@ param(
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
-    [string]$RemoteRoot = "/opt/loan-interest-accrual",
+    [string]$RemoteRoot = "/opt/amortization-accrual",
 
     [Parameter()]
     [ValidateRange(1, 65535)]
-    [int]$HostPort = 18082,
+    [int]$HostPort = 18083,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
-    [string]$ServiceName = "loan-interest-accrual-test",
+    [string]$ServiceName = "amortization-accrual-test",
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]

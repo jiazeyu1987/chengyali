@@ -14,7 +14,7 @@ def test_settings_switches_to_the_remote_backed_loan_page_and_back() -> None:
     assert amortization_page.status_code == 200
     assert 'id="settings-button"' in amortization_page.text
     assert 'href="/loan-interest"' in amortization_page.text
-    assert "连接 172.30.30.58:18082" in amortization_page.text
+    assert "本机内置最终版" in amortization_page.text
     assert amortization_page.text.count('class="program-status-badge"') == 1
     assert 'href="/static/program_switch.css?v=20260716-2"' in amortization_page.text
     assert 'href="/static/polish.css?v=20260716-3"' in amortization_page.text

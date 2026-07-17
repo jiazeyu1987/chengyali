@@ -10,9 +10,9 @@ def test_test_server_deploy_script_uses_committed_source_and_test_target() -> No
     ).read_text(encoding="utf-8")
 
     assert 'ServerHost = "172.30.30.58"' in script
-    assert 'RemoteRoot = "/opt/loan-interest-accrual"' in script
-    assert "HostPort = 18082" in script
-    assert 'ServiceName = "loan-interest-accrual-test"' in script
+    assert 'RemoteRoot = "/opt/amortization-accrual"' in script
+    assert "HostPort = 18083" in script
+    assert 'ServiceName = "amortization-accrual-test"' in script
     assert 'RemotePython = "/opt/intpp-backend/venv/bin/python"' in script
     assert "git archive --format=tar" in script
     assert "git status --porcelain --untracked-files=no" in script
