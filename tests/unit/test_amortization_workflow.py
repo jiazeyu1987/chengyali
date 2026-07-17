@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 
@@ -93,6 +93,35 @@ def test_calculation_applies_completion_cap_and_inclusive_months() -> None:
     assert all(check.passed for check in result.calculation.checks)
 
 
+def test_blank_residual_is_optional_and_defaults_to_zero() -> None:
+    workbook = load_workbook(BytesIO(generate_amortization_template()))
+    sheet = workbook[AMORTIZATION_SHEET]
+    sheet.append(
+        [
+            "软件",
+            "无残值软件",
+            "管理费用",
+            1200,
+            None,
+            date(2026, 4, 30),
+            date(2026, 4, 30),
+            12,
+        ]
+    )
+    stream = BytesIO()
+    workbook.save(stream)
+    workbook.close()
+
+    result = calculate_amortization_submission(
+        "blank-residual.xlsx", stream.getvalue(), NaturalMonth(2026, 6)
+    )
+    assert result.errors == ()
+    assert result.calculation is not None
+    row = result.calculation.rows[0]
+    assert row.residual_value == Decimal("0")
+    assert row.monthly_amortization == Decimal("100.00")
+
+
 def test_export_contains_formulas_and_requested_total_row() -> None:
     result = export_amortization_submission(
         "input.xlsx", _input_workbook(), NaturalMonth(2026, 6)
@@ -101,24 +130,100 @@ def test_export_contains_formulas_and_requested_total_row() -> None:
     assert result.output is not None
     workbook = load_workbook(BytesIO(result.output.workbook_bytes), data_only=False)
     try:
+        assert workbook.sheetnames == ["摊销明细", "分类明细"]
+        assert workbook.active.title == "摊销明细"
+        classified = workbook["分类明细"]
+        assert [classified.cell(3, column).value for column in range(1, 4)] == [
+            "费用",
+            "一级分类",
+            "当期应摊销金额",
+        ]
         sheet = workbook["摊销明细"]
         assert sheet["A1"].value == "无形资产、长期待摊费用摊销明细  2026年6月"
-        assert sheet["A3"].value == 1
-        assert sheet["A4"].value == 2
-        assert sheet["J3"].value == "=ROUND((E3-F3)/I3,2)"
-        assert sheet["K3"].value.startswith("=MIN(I3,MAX(0,")
-        assert sheet["L3"].value == "=IF(K3>=I3,E3,J3*K3)"
-        assert sheet["M3"].value == '=IF(K3>=I3,"",J3)'
-        assert sheet["P3"].value == '=IF(K3>=I3,"",E3-L3)'
-        assert sheet["B5"].value == "合计"
-        assert sheet["E5"].value == "=SUM(E3:E4)"
-        assert sheet["J5"].value == "=SUM(J3:J4)"
-        assert sheet["L5"].value == "=SUM(L3:L4)"
+        assert sheet["A2"].value == "计提月份"
+        assert sheet["A3"].value == datetime(2026, 6, 1)
+        assert sheet["A3"].number_format == 'yy.m"月"'
+        assert sheet["B3"].value == 1
+        assert sheet["B4"].value == 2
+        assert sheet["K3"].value == "=ROUND((F3-G3)/J3,2)"
+        assert sheet["L3"].value.startswith("=MIN(J3,MAX(0,")
+        assert sheet["M3"].value == "=IF(L3>=J3,F3,K3*L3)"
+        assert sheet["N3"].value == '=IF(L3>=J3,"",K3)'
+        assert sheet["Q3"].value == '=IF(L3>=J3,"",F3-M3)'
+        assert sheet["C5"].value == "合计"
+        assert sheet["F5"].value == "=SUM(F3:F4)"
+        assert sheet["K5"].value == "=SUM(K3:K4)"
         assert sheet["M5"].value == "=SUM(M3:M4)"
         assert sheet["N5"].value == "=SUM(N3:N4)"
-        assert sheet["P5"].value == "=SUM(P3:P4)"
+        assert sheet["O5"].value == "=SUM(O3:O4)"
+        assert sheet["Q5"].value == "=SUM(Q3:Q4)"
+        assert sheet.freeze_panes == "C3"
     finally:
         workbook.close()
+
+
+def test_export_adds_single_hierarchical_category_view() -> None:
+    workbook = load_workbook(BytesIO(generate_amortization_template()))
+    sheet = workbook[AMORTIZATION_SHEET]
+    for primary, name, expense, value in (
+        ("B类", "资产1", "A费用", 1200),
+        ("A类", "资产2", "B费用", 2400),
+        ("C类", "资产3", "A费用", 3600),
+    ):
+        sheet.append(
+            [
+                primary,
+                name,
+                expense,
+                value,
+                0,
+                date(2026, 4, 30),
+                date(2026, 4, 30),
+                12,
+            ]
+        )
+    stream = BytesIO()
+    workbook.save(stream)
+    workbook.close()
+
+    result = export_amortization_submission(
+        "classified.xlsx", stream.getvalue(), NaturalMonth(2026, 6)
+    )
+    assert result.errors == ()
+    assert result.output is not None
+    exported = load_workbook(BytesIO(result.output.workbook_bytes), data_only=False)
+    try:
+        assert exported.sheetnames == ["摊销明细", "分类明细"]
+        assert exported.active.title == "摊销明细"
+        classified_sheet = exported["分类明细"]
+        assert [classified_sheet.cell(row, 1).value for row in range(4, 10)] == [
+            "A费用",
+            None,
+            None,
+            "B费用",
+            None,
+            "总计",
+        ]
+        assert [classified_sheet.cell(row, 2).value for row in range(4, 10)] == [
+            None,
+            "B类",
+            "C类",
+            None,
+            "A类",
+            None,
+        ]
+        assert classified_sheet["C4"].value == (
+            "=SUMIF('摊销明细'!$E$3:$E$5,A4,'摊销明细'!$N$3:$N$5)"
+        )
+        assert classified_sheet["C5"].value == (
+            "=SUMIFS('摊销明细'!$N$3:$N$5,'摊销明细'!$E$3:$E$5,$A$4,"
+            "'摊销明细'!$C$3:$C$5,B5)"
+        )
+        assert classified_sheet["C9"].value == (
+            "=SUM('摊销明细'!$N$3:$N$5)"
+        )
+    finally:
+        exported.close()
 
 
 def test_negative_correction_is_supported_and_future_start_is_rejected() -> None:

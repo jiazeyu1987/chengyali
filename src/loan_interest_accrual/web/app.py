@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .loan_proxy_routes import router as loan_proxy_router
 from .routes import router
 
 
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
         name="static",
     )
     application.include_router(router)
+    application.include_router(loan_proxy_router)
     return application
 
 

@@ -46,6 +46,14 @@ def _decimal(value: object) -> Decimal | None:
     return parsed if parsed.is_finite() else None
 
 
+def _optional_residual(value: object) -> Decimal | None:
+    if value is None:
+        return Decimal("0")
+    if type(value) is str and value.strip() in {"", "-", "—"}:
+        return Decimal("0")
+    return _decimal(value)
+
+
 def _date(value: object, epoch) -> date | None:
     if isinstance(value, datetime):
         return value.date()
@@ -173,7 +181,7 @@ def import_amortization_workbook(
                                 )
                             )
                     original = _decimal(values["原值"])
-                    residual = _decimal(values["残值"])
+                    residual = _optional_residual(values["残值"])
                     if original is None:
                         row_errors.append(
                             _error(

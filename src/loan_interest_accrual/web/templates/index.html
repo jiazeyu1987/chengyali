@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>无形资产及长摊自动计提</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=20260715-6">
+  <link rel="stylesheet" href="/static/program_switch.css?v=20260716-2">
+  <link rel="stylesheet" href="/static/polish.css?v=20260716-3">
 </head>
 <body>
   <header class="app-header">
@@ -25,6 +27,7 @@
         <p>上传文件只用于当前计算请求，工具不会保存原始文件或计算记录。</p>
       </div>
       <div class="desktop-actions" aria-label="本地工具操作">
+        <button id="settings-button" class="secondary-button" type="button">设置</button>
         <button id="usage-button" class="secondary-button" type="button">使用说明</button>
         <button id="open-downloads-button" class="secondary-button" type="button">打开下载目录</button>
         <button id="exit-tool-button" class="danger-button" type="button">退出工具</button>
@@ -97,7 +100,17 @@
           <span>校验状态：<strong id="validation-status">-</strong></span>
         </div>
       </div>
-      <div class="table-shell amortization-table-shell">
+      <div class="preview-scroll-guide">
+        <strong>表格右侧上下滚动，底部左右滚动</strong>
+        <span>像 Excel 一样，拖动表格底部滚动条即可查看右侧全部字段。</span>
+      </div>
+      <div
+        id="amortization-table-shell"
+        class="table-shell amortization-table-shell"
+        role="region"
+        aria-label="摊销结果表，可横向滚动查看右侧列"
+        tabindex="0"
+      >
         <table class="amortization-table">
           <thead>
             <tr>
@@ -122,7 +135,7 @@
     </div>
     <p id="usage-dialog-description">按照以下步骤准备、校验并导出摊销结果。</p>
     <ol class="instruction-list">
-      <li>下载标准模板，填写一级分类、名称、对应费用、原值、残值、开始摊销月、入账月和摊销期限/月。</li>
+      <li>下载标准模板，填写一级分类、名称、对应费用、原值、开始摊销月、入账月和摊销期限/月；残值可留空，留空按 0 处理。</li>
       <li>选择计提月份并上传填写完成的 .xlsx 文件。</li>
       <li>程序自动生成序号、月摊销额、累计月数、累计金额及期末净值。</li>
       <li>已达到摊销期限的资产会封顶累计月数，累计摊销金额等于原值。</li>
@@ -131,7 +144,30 @@
     <div class="dialog-actions"><button class="primary-button dialog-confirm" type="button">知道了</button></div>
   </dialog>
 
+  <dialog id="settings-dialog" aria-labelledby="settings-dialog-title">
+    <div class="dialog-heading">
+      <div>
+        <p class="step-label">程序设置</p>
+        <h2 id="settings-dialog-title">切换当前使用的程序</h2>
+      </div>
+      <button class="dialog-close settings-dialog-close" type="button" aria-label="关闭设置">×</button>
+    </div>
+    <p>两套程序共用当前 EXE；贷款利息计算连接你指定的远端最终版服务。</p>
+    <div class="program-switch-grid">
+      <a class="program-option current-program" href="/" aria-current="page">
+        <span class="program-status-badge">当前</span>
+        <strong>无形资产及长摊自动计提</strong>
+        <span>当前程序 · 按月计算摊销并导出分类汇总</span>
+      </a>
+      <a class="program-option" href="/loan-interest">
+        <strong>贷款利息自动计提（最终版）</strong>
+        <span>连接 172.30.30.58:18082 · 按日期区间计算贷款利息</span>
+      </a>
+    </div>
+  </dialog>
+
   <footer>上传文件和计算结果仅用于本次操作，页面刷新后不保留。</footer>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=20260715-6"></script>
+  <script src="/static/program_switch.js?v=20260715-1"></script>
 </body>
 </html>

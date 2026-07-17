@@ -41,6 +41,10 @@ def test_homepage_template_calculate_and_export_flow() -> None:
         assert homepage.status_code == 200
         assert "无形资产及长摊自动计提" in homepage.text
         assert "累计摊销金额（含本期）" in homepage.text
+        assert 'id="amortization-table-shell"' in homepage.text
+        assert "表格右侧上下滚动，底部左右滚动" in homepage.text
+        assert "styles.css?v=20260715-6" in homepage.text
+        assert "app.js?v=20260715-6" in homepage.text
 
         template = client.get("/template")
         assert template.status_code == 200

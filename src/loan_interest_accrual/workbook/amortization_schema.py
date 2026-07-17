@@ -19,6 +19,7 @@ AMORTIZATION_HEADERS = (
     "摊销期限/月",
 )
 AMORTIZATION_RESULT_HEADERS = (
+    "计提月份",
     "序号",
     *AMORTIZATION_HEADERS,
     "月摊销额",

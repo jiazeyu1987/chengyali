@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>贷款利息自动计提</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/loan_interest.css?v=20260716-1">
+  <link rel="stylesheet" href="/static/program_switch.css?v=20260716-2">
+  <link rel="stylesheet" href="/static/polish.css?v=20260716-3">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">本地财务工具</p>
+      <h1>贷款利息自动计提</h1>
+      <p class="subtitle">按所选日期区间校验贷款数据，自动计算应提利息和计息天数。</p>
+    </div>
+    <span class="local-badge">仅在本机运行</span>
+  </header>
+
+  <main>
+    <section class="desktop-panel" aria-labelledby="local-data-heading">
+      <div class="data-notice">
+        <p class="step-label">本机数据保护</p>
+        <h2 id="local-data-heading">数据仅在本机处理，不会上传到外部网络</h2>
+        <p>上传文件只用于当前计算请求，工具不会保存原始文件或计算记录。</p>
+      </div>
+      <div class="desktop-actions" aria-label="本地工具操作">
+        <button id="settings-button" class="secondary-button" type="button">设置</button>
+        <button id="usage-button" class="secondary-button" type="button">使用说明</button>
+        <button id="open-downloads-button" class="secondary-button" type="button">打开下载目录</button>
+        <button id="exit-tool-button" class="danger-button" type="button">退出工具</button>
+      </div>
+    </section>
+
+    <section class="workflow" aria-labelledby="input-heading">
+      <div class="section-heading">
+        <div>
+          <p class="step-label">步骤 1</p>
+          <h2 id="input-heading">选择日期区间与输入文件</h2>
+        </div>
+        <a class="secondary-button" href="/loan-interest/template">下载标准模板</a>
+      </div>
+
+      <form id="calculation-form">
+        <fieldset class="period-range">
+          <legend>计提日期区间</legend>
+          <label class="field">
+            <span>开始日期</span>
+            <input id="calculation-start-date" name="calculation_start_date" type="date" required>
+          </label>
+          <span class="range-separator" aria-hidden="true">至</span>
+          <label class="field">
+            <span>结束日期</span>
+            <input id="calculation-end-date" name="calculation_end_date" type="date" required>
+          </label>
+        </fieldset>
+        <label class="field file-field">
+          <span>贷款数据文件</span>
+          <input id="workbook-file" name="file" type="file" accept=".xlsx" required>
+          <small>支持标准模板 .xlsx；也可识别已覆盖规则的历史台账文件</small>
+        </label>
+        <div class="actions">
+          <button id="calculate-button" class="primary-button" type="submit">计算并预览</button>
+          <button id="export-button" class="secondary-button" type="button" disabled>导出结果</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="status-panel" class="status-panel" aria-live="polite" hidden>
+      <div>
+        <p class="step-label">处理状态</p>
+        <h2 id="status-title">正在处理</h2>
+      </div>
+      <p id="status-message"></p>
+    </section>
+
+    <section id="error-section" class="result-section" aria-labelledby="error-heading" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="step-label error-label">需要修正</p>
+          <h2 id="error-heading">文件校验未通过</h2>
+        </div>
+        <span id="error-count" class="count-badge"></span>
+      </div>
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>工作表</th>
+              <th>行号</th>
+              <th>字段</th>
+              <th>错误说明</th>
+              <th>错误代码</th>
+            </tr>
+          </thead>
+          <tbody id="error-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="preview-section" class="result-section" aria-labelledby="preview-heading" hidden>
+      <div class="preview-period-row">
+        <span>计提区间</span>
+        <strong id="calculation-period">-</strong>
+      </div>
+      <div class="section-heading">
+        <div>
+          <p class="step-label success-label">步骤 2</p>
+          <h2 id="preview-heading">计提结果预览</h2>
+        </div>
+        <div class="summary-strip">
+          <span><strong id="loan-count">0</strong> 笔贷款</span>
+          <span>校验状态：<strong id="validation-status">-</strong></span>
+        </div>
+      </div>
+      <div class="preview-content">
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>公司名称</th>
+                <th>贷款银行</th>
+                <th>期初本金</th>
+                <th>年利率</th>
+                <th>借款时间</th>
+                <th>区间应提利息</th>
+                <th>区间应提利息天数</th>
+              </tr>
+            </thead>
+            <tbody id="preview-body"></tbody>
+          </table>
+        </div>
+        <aside class="company-summary-panel" aria-labelledby="company-summary-heading">
+          <div class="company-summary-heading">
+            <p class="step-label">按公司汇总</p>
+            <h3 id="company-summary-heading">公司本金与利息合计</h3>
+          </div>
+          <div class="company-summary-shell">
+            <table class="company-summary-table">
+              <thead>
+                <tr>
+                  <th>公司名称</th>
+                  <th>本金合计</th>
+                  <th>利息合计</th>
+                </tr>
+              </thead>
+              <tbody id="company-summary-body"></tbody>
+            </table>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <dialog
+    id="usage-dialog"
+    aria-labelledby="usage-dialog-title"
+    aria-describedby="usage-dialog-description"
+  >
+    <div class="dialog-heading">
+      <div>
+        <p class="step-label">使用说明</p>
+        <h2 id="usage-dialog-title">完成一次贷款利息计提</h2>
+      </div>
+      <button class="dialog-close" type="button" aria-label="关闭使用说明">×</button>
+    </div>
+    <p id="usage-dialog-description">按照以下步骤准备、校验并导出计提结果。</p>
+    <ol class="instruction-list">
+      <li>优先下载标准模板，并按模板字段填写贷款主表。</li>
+      <li>公司名称、期初本金、年利率、借款时间为必填项。</li>
+      <li>贷款合同号、贷款银行、备注为选填项；贷款银行填写后将在预览和导出结果中显示。</li>
+      <li>区间应提利息按“期初本金 × 年利率 × 区间应提利息天数 ÷ 360”计算。</li>
+      <li>没有还本备注时计算整个所选日期区间；借款时间落在区间内时从次日起算；“26.3.27还本金”按当日全额还清，“26.6.9还700万”按还款日当天原本金、次日起扣减700万元分段计息。</li>
+      <li>也可以上传已覆盖规则的历史台账，日期区间需与台账中的实际数据一致。</li>
+      <li>选择计提开始日期和结束日期，上传填写完成的 .xlsx 文件。</li>
+      <li>点击“计算并预览”，根据页面提示修正校验错误。</li>
+      <li>确认预览结果后点击“导出结果”，文件将保存到下载目录。</li>
+    </ol>
+    <div class="dialog-actions">
+      <button class="primary-button dialog-confirm" type="button">知道了</button>
+    </div>
+  </dialog>
+
+  <dialog id="settings-dialog" aria-labelledby="settings-dialog-title">
+    <div class="dialog-heading">
+      <div>
+        <p class="step-label">程序设置</p>
+        <h2 id="settings-dialog-title">切换当前使用的程序</h2>
+      </div>
+      <button class="dialog-close settings-dialog-close" type="button" aria-label="关闭设置">×</button>
+    </div>
+    <p>贷款利息计算连接 172.30.30.58:18082 最终版服务。</p>
+    <div class="program-switch-grid">
+      <a class="program-option" href="/">
+        <strong>无形资产及长摊自动计提</strong>
+        <span>切换回摊销程序</span>
+      </a>
+      <a class="program-option current-program" href="/loan-interest" aria-current="page">
+        <span class="program-status-badge">当前</span>
+        <strong>贷款利息自动计提（最终版）</strong>
+        <span>当前程序 · 连接远端最终版</span>
+      </a>
+    </div>
+  </dialog>
+
+  <footer>上传文件和计算结果仅用于本次操作，页面刷新后不保留。</footer>
+  <script src="/static/loan_interest.js?v=20260716-1"></script>
+  <script src="/static/program_switch.js?v=20260716-1"></script>
+</body>
+</html>
